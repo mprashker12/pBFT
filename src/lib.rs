@@ -1,14 +1,18 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
+/// Byzantine Fault Tolerant KV-Store 
+/// 
+
+pub type Key = String;
+pub type Value = u32;
+
+
+pub mod node;
+pub mod net_receiver;
+pub mod net_sender;
+pub mod messages;
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+    fn test() {}
 }
