@@ -22,12 +22,15 @@ async fn main() -> std::io::Result<()> {
 }
 
 async fn handle_stream(stream: TcpStream) -> std::io::Result<()> {
+    println!("Handling stream {:?}", stream.peer_addr());
     let mut reader = BufReader::new(stream);
     loop {
         let mut res = String::new();
-        reader.read_line(&mut res).await?;
-        println!("saw: {}", res);
-        let res: Message = serde_json::from_str(&res).unwrap();
-        println!("Got: {:?}", res);
+        let bytes_read = reader.read_line(&mut res).await?;
+        if bytes_read == 0 {
+            println!("Breaking connection;"); return Ok(());
+        }
+        let message: Message = serde_json::from_str(&res).unwrap();
+        println!("Got: {:?}", message);
     }
 }
