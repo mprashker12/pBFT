@@ -3,7 +3,7 @@ use crate::Result;
 use crate::state::State;
 
 use std::collections::HashMap;
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use tokio::io::{BufStream, AsyncWriteExt};
@@ -23,7 +23,7 @@ pub struct Node {
 
 #[derive(Clone)]
 pub struct InnerNode {
-    pub open_connections : Arc<Mutex<HashMap<SocketAddr, TcpStream>>>,
+    pub open_connections : Arc<Mutex<HashMap<SocketAddr, BufStream<TcpStream>>>>,
 
     pub state : Arc<Mutex<State>>,
 }
@@ -43,21 +43,11 @@ impl Node {
 
     pub async fn run(&mut self) {
         let listener = TcpListener::bind(self.addr).await.unwrap();
+        let socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8079);
 
-        let message = Message::PrePrepareMessage(PrePrepare {
-            view: 7,
-            seq_num: 8,
-            digest: 9,
-        });
+        
         let timer = sleep(Duration::from_secs(4));
         tokio::pin!(timer);
-
-        use std::net::{IpAddr, Ipv4Addr};
-        let socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8079);
-        let inner2 = self.inner.clone();
-        tokio::spawn(async move {
-            inner2.send_message(socket, message).await;
-        });
 
         loop {
             tokio::select! {
@@ -112,7 +102,7 @@ impl InnerNode {
         println!("Sending message");
         let mut connections = self.open_connections.lock().await;
         if !connections.contains_key(&peer_addr) {
-            let mut new_stream = TcpStream::connect(peer_addr).await?;
+            let mut new_stream = BufStream::new(TcpStream::connect(peer_addr).await?);
             connections.insert(peer_addr, new_stream);
         }
 
@@ -122,7 +112,7 @@ impl InnerNode {
 
         let stream = connections.get_mut(&peer_addr).unwrap();
         println!("Sending {:?}", serialized_message);
-        let bytes_written = stream.write(serialized_message.as_bytes()).await?;
+        let bytes_written = stream.get_mut().write(serialized_message.as_bytes()).await?;
         println!("{}", bytes_written);
         Ok(())
     }
