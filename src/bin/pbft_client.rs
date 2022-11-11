@@ -21,9 +21,9 @@ async fn main() -> std::io::Result<()> {
     }
 }
 
-async fn handle_stream(stream: TcpStream) -> std::io::Result<()> {
+async fn handle_stream(mut stream: TcpStream) -> std::io::Result<()> {
     println!("Handling stream {:?}", stream.peer_addr());
-    let mut reader = BufReader::new(stream);
+    let mut reader = BufReader::new(&mut stream);
     loop {
         let mut res = String::new();
         let bytes_read = reader.read_line(&mut res).await?;

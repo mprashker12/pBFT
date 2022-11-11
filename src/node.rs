@@ -1,6 +1,7 @@
-use crate::messages::{Message, NetSenderCommand, PrePrepare};
-use crate::Result;
-use crate::state::State;
+use crate::messages::{Message, PrePrepare};
+use crate::{Result, NodeId};
+use crate::consensus::Consensus;
+use crate::config::Config;
 
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -15,6 +16,10 @@ use tokio::{
 use tokio::time::{sleep, Duration, Instant};
 
 pub struct Node {
+    /// If of this ndoe
+    pub id : NodeId,
+    /// Configuration of Cluster this node is in
+    pub config : Config,
     /// Socket on which this node is listening for connections from peers
     pub addr: SocketAddr,
     /// Node state which will be shared across Tokio tasks
@@ -25,18 +30,23 @@ pub struct Node {
 pub struct InnerNode {
     pub open_connections : Arc<Mutex<HashMap<SocketAddr, BufStream<TcpStream>>>>,
 
-    pub state : Arc<Mutex<State>>,
+    pub state : Arc<Mutex<Consensus>>,
 }
 
 impl Node {
-    pub fn new(listen_addr: SocketAddr) -> Self {
+    pub fn new(id : NodeId, config: Config) -> Self {
+        
+        let addr =*config.listen_addrs.get(&id).unwrap(); 
+
         let inner = InnerNode { 
             open_connections : Arc::new(Mutex::new(HashMap::new())),
-            state: Arc::new(Mutex::new(State::default())),
+            state: Arc::new(Mutex::new(Consensus::default())),
         };
- 
+        
         Self {
-            addr: listen_addr,
+            id,
+            config,
+            addr,
             inner,
         }
     }
@@ -56,7 +66,9 @@ impl Node {
                     let inner = self.inner.clone();
                     tokio::spawn(async move {
                         // if this returns some error, we should cancel the stream
-                        inner.handle_connection(stream).await;
+                        if let Err(e) = inner.handle_connection(stream).await {
+                            // remove connection from inner
+                        }
                     });
                 }
 
@@ -71,7 +83,9 @@ impl Node {
                     // reset the timer
                     timer.as_mut().reset(Instant::now() + Duration::from_secs(4));
                     tokio::spawn(async move {
-                        inner.send_message(socket, message).await;
+                        if let Err(e) = inner.send_message(socket, message).await {
+                            println!("Failed to connect to peer {}", e);
+                        }
                     });
                 }
 
@@ -81,15 +95,25 @@ impl Node {
 }
 
 impl InnerNode {
-    pub async fn handle_connection(&self, stream: TcpStream) -> Result<()> {
-        
-        let mut stream = BufStream::new(stream);
+    pub async fn handle_connection(&self, mut stream: TcpStream) -> Result<()> {
+        let mut reader = BufStream::new(&mut stream);
         loop {
             let mut buf = String::new();
-            stream.read_line(&mut buf).await?;
+            let bytes_read = reader.read_line(&mut buf).await?;
+            if bytes_read == 0 {
+                // connection from peer has been closed
+                self.open_connections.lock().await.remove(&stream.peer_addr().unwrap());
+                return Ok(())
+            }
             let message: Message = serde_json::from_str(&buf)?;
             {
+                //todo: Make this a separate function
                 self.state.lock().await.add_to_log(message);
+            }
+            match message {
+                Message::PrePrepareMessage(PrePrepare) => {
+
+                }
             }
         }
     }
@@ -101,9 +125,9 @@ impl InnerNode {
     ) -> crate::Result<()> {
         println!("Sending message");
         let mut connections = self.open_connections.lock().await;
-        if !connections.contains_key(&peer_addr) {
-            let mut new_stream = BufStream::new(TcpStream::connect(peer_addr).await?);
-            connections.insert(peer_addr, new_stream);
+        if let std::collections::hash_map::Entry::Vacant(e) = connections.entry(peer_addr) {
+            let new_stream = BufStream::new(TcpStream::connect(peer_addr).await?);
+            e.insert(new_stream);
         }
 
         let mut serialized_message = serde_json::to_string(&message).unwrap();

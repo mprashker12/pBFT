@@ -2,13 +2,13 @@ use crate::messages::Message;
 
 use std::collections::VecDeque;
 
-pub struct State {
+pub struct Consensus {
     view: usize,
 
     log: VecDeque<Message>,
 }
 
-impl Default for State {
+impl Default for Consensus {
     fn default() -> Self {
         Self {
             view : 0,
@@ -17,7 +17,7 @@ impl Default for State {
     }
 }
 
-impl State {
+impl Consensus {
 
     pub fn add_to_log(&mut self, message : Message) {
         self.log.push_back(message);

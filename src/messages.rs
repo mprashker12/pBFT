@@ -2,6 +2,8 @@ use std::net::SocketAddr;
 
 use serde::{Deserialize, Serialize};
 
+use crate::NodeId;
+
 /// Messages which are communicated between nodes in the network
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum Message {
@@ -15,11 +17,13 @@ pub struct PrePrepare {
     pub digest: usize, /* TODO: Make this some hash */
 }
 
-/// Commands used internally in channels
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub enum NetSenderCommand {
-    Send {
-        peer_addr: SocketAddr,
-        message: Message,
-    },
+pub struct Prepare {
+    pub view: usize,
+    pub seq_num: usize,
+    pub digest: usize, /* TODO: Make this some hash */
+    pub id: NodeId,
 }
+
+
+
