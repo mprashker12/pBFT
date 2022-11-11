@@ -16,7 +16,7 @@ async fn main() -> std::io::Result<()> {
 
     let mut node = Node::new(listen_addr, tx);
     let node_fut = tokio::spawn(async move {
-        node.spawn().await;
+        node.run().await;
     });
 
     let mut net_sender = NetSender {

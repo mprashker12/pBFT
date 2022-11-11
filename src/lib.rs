@@ -4,6 +4,7 @@
 pub type Key = String;
 pub type Value = u32;
 
+pub mod config;
 pub mod messages;
 pub mod net_sender;
 pub mod node;
