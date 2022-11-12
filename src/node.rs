@@ -90,6 +90,15 @@ impl Node {
                 }
 
                 // make a future representing an incoming message from the consensus engine
+                res = self.rx_node.recv() => {
+                    let cmd = res.unwrap();
+                    match cmd {
+                        NodeCommand::SendMessageCommand(send_message) => {
+                            let _ = self.inner.send_message(&send_message.destination, send_message.message).await;
+                        }
+                        NodeCommand::EnterCommitCommand(enter_commit) => {}
+                    }
+                }
                 
                 // future representing a timer which expires periodically and we should do some work
                 () = &mut timer => {
@@ -187,41 +196,5 @@ impl InnerNode {
             .write(message.serialize().as_slice())
             .await?;
         Ok(())
-    }
-
-    // this logic will all be moved to the consensus engine
-    // async fn handle_pre_prepare(&self, pre_prepare: PrePrepare) {
-    //     let mut consensus = self.consensus.lock().await;
-
-    //     if consensus.should_accept_pre_prepare(&pre_prepare) {
-    //         // if we accept, we should broadcast to the network a corresponding prepare message
-    //         // and add both messages to the log. Otherwise, we do nothing. The consensus struct has
-    //         // all information needed to determine if we should accept the pre-prepare
-    //         consensus.add_to_log(&Message::PrePrepareMessage(pre_prepare));
-    //     }
-    // }
-
-    // async fn handle_prepare(&self, prepare: Prepare) {
-    //     let mut consensus = self.consensus.lock().await;
-    // }
-
-    // async fn handle_client_request(&self, client_request : ClientRequest) {
-    //     self.tx_consensus.send(ConsensusCommand::ProcessMessage(Message::ClientRequestMessage(client_request))).await;
-    //     let mut consensus = self.consensus.lock().await;
-    //     let current_leader = consensus.current_leader();
-    //     let leader_addr = self.config.peer_addrs.get(&current_leader).unwrap();
-    //     if self.id != current_leader {
-    //         println!("Received client request not for me. Forwarding to leader {} at {}", current_leader, leader_addr);
-    //         // received a client request when we were not the leader
-    //         // so we forward the request to the leader
-    //         // this triggers a timer in consensus 
-
-    //         let _ = self.send_message(
-    //             leader_addr, 
-    //             Message::ClientRequestMessage(client_request.clone())
-    //         ).await;
-    //         return;
-    //     }
-    //     consensus.process_client_request(&client_request);
-    // }
+    } 
 }

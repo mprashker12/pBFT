@@ -16,12 +16,14 @@ pub enum Message {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ConsensusCommand {
     ProcessMessage(Message),
+    MisdirectedClientRequest(ClientRequest)
 }
 
 
 /// Commands to Node
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum NodeCommand {
+    SendMessageCommand(SendMessage),
     EnterCommitCommand(EnterCommit),
 }
 
@@ -68,6 +70,13 @@ impl Message {
 
 // Commands to Node
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SendMessage {
+    pub destination: SocketAddr,
+    pub message: Message,
+}
+
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EnterCommit {
     pub view: usize,
@@ -75,6 +84,6 @@ pub struct EnterCommit {
     pub digest: usize, /* TODO: Make this some hash */
 }
 
-//Commands to Consensus Engine
+
 
 

@@ -1,6 +1,6 @@
 use crate::NodeId;
 use crate::config::Config;
-use crate::messages::{Message, PrePrepare, Prepare, ClientRequest, ConsensusCommand, NodeCommand};
+use crate::messages::{Message, PrePrepare, Prepare, ClientRequest, ConsensusCommand, NodeCommand, SendMessage};
 
 use tokio::sync::Mutex;
 use tokio::sync::mpsc::{Sender, Receiver};
@@ -42,6 +42,7 @@ pub struct InnerConsensus {
 
 #[derive(Default)]
 pub struct State {
+    pub in_view_change: bool,
     pub view: usize,
     pub seq_num: usize,
     pub log: VecDeque<Message>,
@@ -81,9 +82,17 @@ impl Consensus {
                                 inner.process_message(&message).await;
                             });
                         }
+
+                        ConsensusCommand::MisdirectedClientRequest(request) => {
+                            let leader = self.inner.current_leader().await;
+                            let leader_addr = self.config.peer_addrs.get(&leader).unwrap();
+                            let _ = self.tx_node.send(NodeCommand::SendMessageCommand(SendMessage {
+                                destination: *leader_addr,
+                                message: Message::ClientRequestMessage(request),
+                            })).await;
+                        }
                     }
                 }
-
             }
         }
     }
@@ -97,7 +106,6 @@ impl InnerConsensus {
             Message::PrePrepareMessage(pre_prepare) => {}
             Message::PrepareMessage(prepare) => {}
             Message::ClientRequestMessage(client_request) => {
-                println!("Received Client request {:?}", &message);
                 self.process_client_request(&client_request).await;
             }
         }
@@ -146,6 +154,7 @@ impl InnerConsensus {
     pub async fn process_client_request(&mut self, request: &ClientRequest) {
         if self.id != self.current_leader().await {
             self.add_outstanding_request(request).await;
+            self.tx_consensus.send(ConsensusCommand::MisdirectedClientRequest(request.clone())).await;
             sleep(std::time::Duration::from_secs(7)).await;
             if self.request_is_outstanding(request).await {
                 // add this point, we have hit the timeout for a request to be outstanding
