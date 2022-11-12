@@ -1,6 +1,6 @@
 use crate::config::Config;
-use crate::consensus::Consensus;
-use crate::messages::{Message, PrePrepare, Prepare};
+use crate::consensus::{Consensus};
+use crate::messages::{Message, PrePrepare, Prepare, ClientRequest};
 use crate::{NodeId, Result};
 
 use std::collections::HashMap;
@@ -15,7 +15,7 @@ use tokio::{io::AsyncBufReadExt, sync::Mutex};
 // TODO: We may use a mpsc channel for the inner node to communicate with its parent node
 
 pub struct Node {
-    /// If of this ndoe
+    /// Id of this node
     pub id: NodeId,
     /// Configuration of Cluster this node is in
     pub config: Config,
@@ -27,29 +27,27 @@ pub struct Node {
 
 #[derive(Clone)]
 pub struct InnerNode {
+    /// Id of the outer node
+    pub id: NodeId,
+    /// Config of the cluster of the outer node
+    pub config : Config,
     /// Currently open connections maintained with other nodes for writing
     pub open_write_connections: Arc<Mutex<HashMap<SocketAddr, BufStream<TcpStream>>>>,
     /// Consensus engine
     pub consensus: Arc<Mutex<Consensus>>,
-    /// Addresses of other nodes in the network
-    pub peer_addrs: Arc<Vec<SocketAddr>>,
 }
 
 impl Node {
     pub fn new(id: NodeId, config: Config) -> Self {
-        let addr_me = *config.listen_addrs.get(&id).unwrap();
-        let mut addr_peers = Vec::<SocketAddr>::new();
-        for (_, peer_addr) in config.listen_addrs.iter() {
-            addr_peers.push(*peer_addr);
-        }
+        let addr_me = *config.peer_addrs.get(&id).unwrap();
 
-        //todo : pass in config to consensus for construction
-        // we will also have a mpsc channel for consensus to communicate with the node
+        // todo: we may also have a mpsc channel for consensus to communicate with the node
 
         let inner = InnerNode {
+            id,
+            config: config.clone(),
             open_write_connections: Arc::new(Mutex::new(HashMap::new())),
             consensus: Arc::new(Mutex::new(Consensus::new(config.clone()))),
-            peer_addrs: Arc::new(addr_peers),
         };
 
         Self {
@@ -84,7 +82,8 @@ impl Node {
                         }
                     });
                 }
-
+                
+                // future representing a timer which expires periodically and we should do some work
                 () = &mut timer => {
                     // timer expired
                     let message = Message::PrePrepareMessage(PrePrepare {
@@ -150,13 +149,19 @@ impl InnerNode {
                 Message::PrepareMessage(prepare) => {
                     self.handle_prepare(prepare).await;
                 }
+                Message::ClientRequestMessage(client_request) => {
+                    self.handle_client_request(client_request).await;
+                    // we do not want to maintain persistent connections with each client connection
+                    // so we terminate the connection upon receiving a client request
+                    return Ok(());
+                }
             }
         }
     }
 
     pub async fn broadcast(&self, message: Message) {
-        for peer_addr in self.peer_addrs.iter() {
-            let _ = self.send_message(peer_addr, message).await;
+        for (_, peer_addr) in self.config.peer_addrs.iter() {
+            let _ = self.send_message(peer_addr, message.clone()).await;
         }
     }
 
@@ -194,5 +199,22 @@ impl InnerNode {
 
     async fn handle_prepare(&self, prepare: Prepare) {
         let mut consensus = self.consensus.lock().await;
+    }
+
+    async fn handle_client_request(&self, client_request : ClientRequest) {
+        let mut consensus = self.consensus.lock().await;
+        let current_leader = consensus.current_leader();
+        let leader_addr = self.config.peer_addrs.get(&current_leader).unwrap();
+        if self.id != current_leader {
+            println!("Received client request not for me. Fowarding to leader {} at {}", current_leader, leader_addr);
+            // received a client request when we were not the leader
+            // so we forward the request to the leader
+            let _ = self.send_message(
+                leader_addr, 
+                Message::ClientRequestMessage(client_request.clone())
+            ).await;
+            return;
+        }
+        consensus.process_client_request(&client_request);
     }
 }

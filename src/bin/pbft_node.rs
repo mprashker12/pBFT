@@ -14,23 +14,23 @@ async fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
     let id = args[1].parse::<usize>().unwrap();
 
-    let mut listen_addrs = HashMap::new();
-    listen_addrs.insert(
+    let mut peer_addrs = HashMap::new();
+    peer_addrs.insert(
         0,
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8060),
     );
-    listen_addrs.insert(
+    peer_addrs.insert(
         1,
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8061),
     );
-    listen_addrs.insert(
+    peer_addrs.insert(
         2,
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8062),
     );
 
     let config = Config {
         num_nodes: 3,
-        listen_addrs,
+        peer_addrs,
     };
 
     let mut node = Node::new(id, config);
