@@ -12,19 +12,19 @@ pub enum Message {
     ClientRequestMessage(ClientRequest),
 }
 
-/// Commands which the consensus engine passes to the node
+/// Commands to Consensus Engine
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ConsensusCommand {
+    ProcessMessage(Message),
+}
+
+
+/// Commands to Node
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum NodeCommand {
     EnterCommitCommand(EnterCommit),
 }
 
-impl Message {
-    pub fn serialize(&self) -> Vec<u8> {
-        let mut serialized_message = serde_json::to_string(self).unwrap();
-        serialized_message.push('\n');
-        serialized_message.into_bytes()
-    }
-}
 
 // Messages
 
@@ -53,11 +53,20 @@ pub struct ViewChange {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ClientRequest {
     pub respond_addr: SocketAddr,
+    pub time_stamp : usize,
     pub key: Key,
     pub value: Value,
 }
 
-// Commands
+impl Message {
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut serialized_message = serde_json::to_string(self).unwrap();
+        serialized_message.push('\n');
+        serialized_message.into_bytes()
+    }
+}
+
+// Commands to Node
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EnterCommit {
@@ -65,5 +74,7 @@ pub struct EnterCommit {
     pub seq_num: usize,
     pub digest: usize, /* TODO: Make this some hash */
 }
+
+//Commands to Consensus Engine
 
 

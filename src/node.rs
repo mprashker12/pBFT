@@ -1,6 +1,6 @@
 use crate::config::Config;
 use crate::consensus::{Consensus};
-use crate::messages::{Message, PrePrepare, Prepare, ClientRequest};
+use crate::messages::{Message, PrePrepare, Prepare, ClientRequest, ConsensusCommand, NodeCommand};
 use crate::{NodeId, Result};
 
 use std::collections::HashMap;
@@ -11,6 +11,7 @@ use tokio::io::{AsyncWriteExt, BufStream};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::{sleep, Duration, Instant};
 use tokio::{io::AsyncBufReadExt, sync::Mutex};
+use tokio::sync::mpsc::{Sender, Receiver};
 
 // TODO: We may use a mpsc channel for the inner node to communicate with its parent node
 
@@ -23,6 +24,8 @@ pub struct Node {
     pub addr: SocketAddr,
     /// Node state which will be shared across Tokio tasks
     pub inner: InnerNode,
+    /// Receive Commands from the Consensus Engine
+    pub rx_node : Receiver<NodeCommand>,
 }
 
 #[derive(Clone)]
@@ -34,11 +37,13 @@ pub struct InnerNode {
     /// Currently open connections maintained with other nodes for writing
     pub open_write_connections: Arc<Mutex<HashMap<SocketAddr, BufStream<TcpStream>>>>,
     /// Consensus engine
-    pub consensus: Arc<Mutex<Consensus>>,
+    pub tx_consensus : Sender<ConsensusCommand>,
+    /// Send Node Commands to itself (used internally)
+    pub tx_node : Sender<NodeCommand>,
 }
 
 impl Node {
-    pub fn new(id: NodeId, config: Config) -> Self {
+    pub fn new(id: NodeId, config: Config, rx_node : Receiver<NodeCommand>, tx_consensus : Sender<ConsensusCommand>, tx_node : Sender<NodeCommand>) -> Self {
         let addr_me = *config.peer_addrs.get(&id).unwrap();
 
         // todo: we may also have a mpsc channel for consensus to communicate with the node
@@ -47,7 +52,8 @@ impl Node {
             id,
             config: config.clone(),
             open_write_connections: Arc::new(Mutex::new(HashMap::new())),
-            consensus: Arc::new(Mutex::new(Consensus::new(config.clone()))),
+            tx_consensus,
+            tx_node,
         };
 
         Self {
@@ -55,10 +61,11 @@ impl Node {
             config,
             addr: addr_me,
             inner,
+            rx_node,
         }
     }
 
-    pub async fn run(&mut self) {
+    pub async fn spawn(&mut self) {
         let listener = TcpListener::bind(self.addr).await.unwrap();
         let peer_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8079);
 
@@ -69,7 +76,6 @@ impl Node {
 
         loop {
             tokio::select! {
-
                 // future representing an incoming connection
                 // we maintain the connection and only read from it
                 // perhaps updating the consensus state
@@ -142,19 +148,14 @@ impl InnerNode {
             }
             let message: Message = serde_json::from_str(&buf)?;
             println!("Received {:?} from {}", message, peer_addr);
-            match message {
-                Message::PrePrepareMessage(pre_prepare) => {
-                    self.handle_pre_prepare(pre_prepare).await;
-                }
-                Message::PrepareMessage(prepare) => {
-                    self.handle_prepare(prepare).await;
-                }
-                Message::ClientRequestMessage(client_request) => {
-                    self.handle_client_request(client_request).await;
-                    // we do not want to maintain persistent connections with each client connection
-                    // so we terminate the connection upon receiving a client request
-                    return Ok(());
-                }
+            let _ = self.tx_consensus.send(ConsensusCommand::ProcessMessage(
+                message.clone()
+            )).await;
+
+            if let Message::ClientRequestMessage(_) = message {
+                // we do not want to maintain persistent connections with each client connection
+                // so we terminate the connection upon receiving a client request
+                return Ok(());
             }
         }
     }
@@ -186,35 +187,39 @@ impl InnerNode {
         Ok(())
     }
 
-    async fn handle_pre_prepare(&self, pre_prepare: PrePrepare) {
-        let mut consensus = self.consensus.lock().await;
+    // this logic will all be moved to the consensus engine
+    // async fn handle_pre_prepare(&self, pre_prepare: PrePrepare) {
+    //     let mut consensus = self.consensus.lock().await;
 
-        if consensus.should_accept_pre_prepare(&pre_prepare) {
-            // if we accept, we should broadcast to the network a corresponding prepare message
-            // and add both messages to the log. Otherwise, we do nothing. The consensus struct has
-            // all information needed to determine if we should accept the pre-prepare
-            consensus.add_to_log(&Message::PrePrepareMessage(pre_prepare));
-        }
-    }
+    //     if consensus.should_accept_pre_prepare(&pre_prepare) {
+    //         // if we accept, we should broadcast to the network a corresponding prepare message
+    //         // and add both messages to the log. Otherwise, we do nothing. The consensus struct has
+    //         // all information needed to determine if we should accept the pre-prepare
+    //         consensus.add_to_log(&Message::PrePrepareMessage(pre_prepare));
+    //     }
+    // }
 
-    async fn handle_prepare(&self, prepare: Prepare) {
-        let mut consensus = self.consensus.lock().await;
-    }
+    // async fn handle_prepare(&self, prepare: Prepare) {
+    //     let mut consensus = self.consensus.lock().await;
+    // }
 
-    async fn handle_client_request(&self, client_request : ClientRequest) {
-        let mut consensus = self.consensus.lock().await;
-        let current_leader = consensus.current_leader();
-        let leader_addr = self.config.peer_addrs.get(&current_leader).unwrap();
-        if self.id != current_leader {
-            println!("Received client request not for me. Fowarding to leader {} at {}", current_leader, leader_addr);
-            // received a client request when we were not the leader
-            // so we forward the request to the leader
-            let _ = self.send_message(
-                leader_addr, 
-                Message::ClientRequestMessage(client_request.clone())
-            ).await;
-            return;
-        }
-        consensus.process_client_request(&client_request);
-    }
+    // async fn handle_client_request(&self, client_request : ClientRequest) {
+    //     self.tx_consensus.send(ConsensusCommand::ProcessMessage(Message::ClientRequestMessage(client_request))).await;
+    //     let mut consensus = self.consensus.lock().await;
+    //     let current_leader = consensus.current_leader();
+    //     let leader_addr = self.config.peer_addrs.get(&current_leader).unwrap();
+    //     if self.id != current_leader {
+    //         println!("Received client request not for me. Forwarding to leader {} at {}", current_leader, leader_addr);
+    //         // received a client request when we were not the leader
+    //         // so we forward the request to the leader
+    //         // this triggers a timer in consensus 
+
+    //         let _ = self.send_message(
+    //             leader_addr, 
+    //             Message::ClientRequestMessage(client_request.clone())
+    //         ).await;
+    //         return;
+    //     }
+    //     consensus.process_client_request(&client_request);
+    // }
 }

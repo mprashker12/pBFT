@@ -3,6 +3,8 @@ use std::net::SocketAddr;
 
 use crate::NodeId;
 
+// part of the config will include public keys for each node in the system
+
 #[derive(Clone)]
 pub struct Config {
     /// Number of nodes in the system
