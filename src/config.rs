@@ -4,6 +4,7 @@ use std::net::SocketAddr;
 
 use crate::NodeId;
 
+#[derive(Clone)]
 pub struct Config {
     /// Number of nodes in the system
     pub num_nodes: usize,

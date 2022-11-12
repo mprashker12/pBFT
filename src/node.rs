@@ -27,12 +27,11 @@ pub struct Node {
 
 #[derive(Clone)]
 pub struct InnerNode {
-    /// Note that these connections will only be used for writing
+    /// Currently open connections maintained with other nodes for writing
     pub open_write_connections: Arc<Mutex<HashMap<SocketAddr, BufStream<TcpStream>>>>,
-
+    /// Consensus engine
     pub consensus: Arc<Mutex<Consensus>>,
-
-    // primarily used so that the inner node is capable of broadcasting
+    /// Addresses of other nodes in the network
     pub peer_addrs: Arc<Vec<SocketAddr>>,
 }
 
@@ -44,9 +43,12 @@ impl Node {
             addr_peers.push(*peer_addr);
         }
 
+        //todo : pass in config to consensus for construction
+        // we will also have a mpsc channel for consensus to communicate with the node
+
         let inner = InnerNode {
             open_write_connections: Arc::new(Mutex::new(HashMap::new())),
-            consensus: Arc::new(Mutex::new(Consensus::default())),
+            consensus: Arc::new(Mutex::new(Consensus::new(config.clone()))),
             peer_addrs: Arc::new(addr_peers),
         };
 
@@ -171,30 +173,26 @@ impl InnerNode {
             e.insert(new_stream);
         }
 
-        let mut serialized_message = serde_json::to_string(&message).unwrap();
-        serialized_message.push('\n');
-
         let stream = connections.get_mut(peer_addr).unwrap();
         let _bytes_written = stream
             .get_mut()
-            .write(serialized_message.as_bytes())
+            .write(message.serialize().as_slice())
             .await?;
         Ok(())
     }
 
+    async fn handle_pre_prepare(&self, pre_prepare: PrePrepare) {
+        let mut consensus = self.consensus.lock().await;
 
-    async fn add_to_log(&self, message: &Message) {
-        self.consensus.lock().await.add_to_log(*message);
-    }
-
-    async fn handle_pre_prepare(&self, pre_prepare : PrePrepare) {
-        if self.consensus.lock().await.should_accept_pre_prepare(pre_prepare) {
+        if consensus.should_accept_pre_prepare(&pre_prepare) {
             // if we accept, we should broadcast to the network a corresponding prepare message
             // and add both messages to the log. Otherwise, we do nothing. The consensus struct has
             // all information needed to determine if we should accept the pre-prepare
-            self.add_to_log(&Message::PrePrepareMessage(pre_prepare)).await;
-        } 
+            consensus.add_to_log(&Message::PrePrepareMessage(pre_prepare));
+        }
     }
 
-    async fn handle_prepare(&self, prepare : Prepare) {}
+    async fn handle_prepare(&self, prepare: Prepare) {
+        let mut consensus = self.consensus.lock().await;
+    }
 }

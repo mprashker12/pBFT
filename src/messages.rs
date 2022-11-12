@@ -11,6 +11,14 @@ pub enum Message {
     PrepareMessage(Prepare),
 }
 
+impl Message {
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut serialized_message = serde_json::to_string(self).unwrap();
+        serialized_message.push('\n');
+        serialized_message.into_bytes()
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct PrePrepare {
     pub view: usize,
