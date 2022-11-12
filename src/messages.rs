@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{NodeId, Key, Value};
+use crate::{Key, NodeId, Value};
 
 /// Messages which are communicated between nodes in the network
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,17 +16,16 @@ pub enum Message {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ConsensusCommand {
     ProcessMessage(Message),
-    MisdirectedClientRequest(ClientRequest)
+    MisdirectedClientRequest(ClientRequest),
+    EnterPrePrepare(ClientRequest),
 }
-
 
 /// Commands to Node
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum NodeCommand {
     SendMessageCommand(SendMessage),
-    EnterCommitCommand(EnterCommit),
+    BroadCastMessageCommand(BroadCastMessage),
 }
-
 
 // Messages
 
@@ -34,7 +33,8 @@ pub enum NodeCommand {
 pub struct PrePrepare {
     pub view: usize,
     pub seq_num: usize,
-    pub digest: usize, /* TODO: Make this some hash */
+    pub digest: usize, /* This is going to be a hash of a client request */
+    pub client_request: ClientRequest,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -55,7 +55,7 @@ pub struct ViewChange {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ClientRequest {
     pub respond_addr: SocketAddr,
-    pub time_stamp : usize,
+    pub time_stamp: usize,
     pub key: Key,
     pub value: Value,
 }
@@ -76,6 +76,12 @@ pub struct SendMessage {
     pub message: Message,
 }
 
+// Commands to Node
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BroadCastMessage {
+    pub message: Message,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EnterCommit {
@@ -83,7 +89,3 @@ pub struct EnterCommit {
     pub seq_num: usize,
     pub digest: usize, /* TODO: Make this some hash */
 }
-
-
-
-

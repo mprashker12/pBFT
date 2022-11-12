@@ -1,6 +1,6 @@
 use crate::config::Config;
-use crate::consensus::{Consensus};
-use crate::messages::{Message, PrePrepare, Prepare, ClientRequest, ConsensusCommand, NodeCommand};
+use crate::consensus::Consensus;
+use crate::messages::{ClientRequest, ConsensusCommand, Message, NodeCommand, PrePrepare, Prepare};
 use crate::{NodeId, Result};
 
 use std::collections::HashMap;
@@ -9,9 +9,9 @@ use std::sync::Arc;
 
 use tokio::io::{AsyncWriteExt, BufStream};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::{sleep, Duration, Instant};
 use tokio::{io::AsyncBufReadExt, sync::Mutex};
-use tokio::sync::mpsc::{Sender, Receiver};
 
 // TODO: We may use a mpsc channel for the inner node to communicate with its parent node
 
@@ -25,7 +25,7 @@ pub struct Node {
     /// Node state which will be shared across Tokio tasks
     pub inner: InnerNode,
     /// Receive Commands from the Consensus Engine
-    pub rx_node : Receiver<NodeCommand>,
+    pub rx_node: Receiver<NodeCommand>,
 }
 
 #[derive(Clone)]
@@ -33,17 +33,23 @@ pub struct InnerNode {
     /// Id of the outer node
     pub id: NodeId,
     /// Config of the cluster of the outer node
-    pub config : Config,
+    pub config: Config,
     /// Currently open connections maintained with other nodes for writing
     pub open_write_connections: Arc<Mutex<HashMap<SocketAddr, BufStream<TcpStream>>>>,
     /// Consensus engine
-    pub tx_consensus : Sender<ConsensusCommand>,
+    pub tx_consensus: Sender<ConsensusCommand>,
     /// Send Node Commands to itself (used internally)
-    pub tx_node : Sender<NodeCommand>,
+    pub tx_node: Sender<NodeCommand>,
 }
 
 impl Node {
-    pub fn new(id: NodeId, config: Config, rx_node : Receiver<NodeCommand>, tx_consensus : Sender<ConsensusCommand>, tx_node : Sender<NodeCommand>) -> Self {
+    pub fn new(
+        id: NodeId,
+        config: Config,
+        rx_node: Receiver<NodeCommand>,
+        tx_consensus: Sender<ConsensusCommand>,
+        tx_node: Sender<NodeCommand>,
+    ) -> Self {
         let addr_me = *config.peer_addrs.get(&id).unwrap();
 
         // todo: we may also have a mpsc channel for consensus to communicate with the node
@@ -67,12 +73,7 @@ impl Node {
 
     pub async fn spawn(&mut self) {
         let listener = TcpListener::bind(self.addr).await.unwrap();
-        let peer_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8079);
-
         println!("Node {} listening on {}", self.id, self.addr);
-
-        let timer = sleep(Duration::from_secs(4));
-        tokio::pin!(timer);
 
         loop {
             tokio::select! {
@@ -96,39 +97,9 @@ impl Node {
                         NodeCommand::SendMessageCommand(send_message) => {
                             let _ = self.inner.send_message(&send_message.destination, send_message.message).await;
                         }
-                        NodeCommand::EnterCommitCommand(enter_commit) => {}
-                    }
-                }
-                
-                // future representing a timer which expires periodically and we should do some work
-                () = &mut timer => {
-                    // timer expired
-                    let message = Message::PrePrepareMessage(PrePrepare {
-                        view: 100,
-                        seq_num: 101,
-                        digest: 102,
-                    });
-                    let inner = self.inner.clone();
-                    // reset the timer
-                    timer.as_mut().reset(Instant::now() + Duration::from_secs(4));
-                    tokio::spawn(async move {
-                        let mut should_remove : bool = false;
-                        if let Err(e) = inner.send_message(&peer_addr, message).await {
-                            println!("Failed to connect to peer {}", e);
-                            should_remove = true;
+                        NodeCommand::BroadCastMessageCommand(broadcast_message) => {
+                            self.inner.broadcast(&broadcast_message.message).await;
                         }
-                        if should_remove {
-                            inner.open_write_connections.lock().await.remove(&peer_addr);
-                        }
-                    });
-                    let message = Message::PrePrepareMessage(PrePrepare {
-                        view: 104,
-                        seq_num: 105,
-                        digest: 106,
-                    });
-
-                    if self.id == 2 {
-                        self.inner.broadcast(message).await;
                     }
                 }
             }
@@ -159,9 +130,10 @@ impl InnerNode {
             }
             let message: Message = serde_json::from_str(&buf)?;
             println!("Received {:?} from {}", message, peer_addr);
-            let _ = self.tx_consensus.send(ConsensusCommand::ProcessMessage(
-                message.clone()
-            )).await;
+            let _ = self
+                .tx_consensus
+                .send(ConsensusCommand::ProcessMessage(message.clone()))
+                .await;
 
             if let Message::ClientRequestMessage(_) = message {
                 // we do not want to maintain persistent connections with each client connection
@@ -171,8 +143,9 @@ impl InnerNode {
         }
     }
 
-    pub async fn broadcast(&self, message: Message) {
-        for (_, peer_addr) in self.config.peer_addrs.iter() {
+    pub async fn broadcast(&self, message: &Message) {
+        for (node_id, peer_addr) in self.config.peer_addrs.iter() {
+            if *node_id == self.id {continue;}
             let _ = self.send_message(peer_addr, message.clone()).await;
         }
     }
@@ -191,10 +164,14 @@ impl InnerNode {
         }
 
         let stream = connections.get_mut(peer_addr).unwrap();
-        let _bytes_written = stream
+        if let Err(e) = stream
             .get_mut()
             .write(message.serialize().as_slice())
-            .await?;
+            .await {
+                println!("Failed to send to {}", peer_addr);
+                connections.remove(peer_addr);
+                return Err(Box::new(e));
+            }
         Ok(())
-    } 
+    }
 }

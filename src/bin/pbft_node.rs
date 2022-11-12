@@ -1,6 +1,6 @@
+use pbft::config::Config;
 use pbft::consensus::Consensus;
 use pbft::messages::{ConsensusCommand, NodeCommand};
-use pbft::{config::Config};
 use pbft::node::Node;
 use pbft::Result;
 
@@ -38,14 +38,26 @@ async fn main() -> Result<()> {
     };
 
     let (tx_consensus, rx_consensus) = channel::<ConsensusCommand>(32);
-    let (tx_node,rx_node) = channel::<NodeCommand>(32);
+    let (tx_node, rx_node) = channel::<NodeCommand>(32);
 
-    let mut node = Node::new(id, config.clone(), rx_node, tx_consensus.clone(), tx_node.clone());
+    let mut node = Node::new(
+        id,
+        config.clone(),
+        rx_node,
+        tx_consensus.clone(),
+        tx_node.clone(),
+    );
     let node_fut = tokio::spawn(async move {
         node.spawn().await;
     });
 
-    let mut consensus = Consensus::new(id, config.clone(), rx_consensus, tx_consensus.clone(), tx_node.clone());
+    let mut consensus = Consensus::new(
+        id,
+        config.clone(),
+        rx_consensus,
+        tx_consensus.clone(),
+        tx_node.clone(),
+    );
     let consensus_fut = tokio::spawn(async move {
         consensus.spawn().await;
     });

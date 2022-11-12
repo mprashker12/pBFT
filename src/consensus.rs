@@ -1,12 +1,14 @@
-use crate::NodeId;
 use crate::config::Config;
-use crate::messages::{Message, PrePrepare, Prepare, ClientRequest, ConsensusCommand, NodeCommand, SendMessage};
+use crate::messages::{
+    ClientRequest, ConsensusCommand, Message, NodeCommand, PrePrepare, Prepare, SendMessage, BroadCastMessage
+};
+use crate::NodeId;
 
+use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::Mutex;
-use tokio::sync::mpsc::{Sender, Receiver};
 use tokio::time::{sleep, Duration};
 
-use std::collections::{VecDeque, HashSet};
+use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 
 // Note that all communication between the Node and the Consensus engine takes place
@@ -18,26 +20,25 @@ pub struct Consensus {
     /// Configuration of the cluster this node is in
     pub config: Config,
     /// Receiver of Consensus Commands
-    pub rx_consensus : Receiver<ConsensusCommand>,
+    pub rx_consensus: Receiver<ConsensusCommand>,
     /// Sends Commands to Node
-    pub tx_node : Sender<NodeCommand>,
+    pub tx_node: Sender<NodeCommand>,
     /// Inner part of Consensus moving between tasks
     pub inner: InnerConsensus,
-
 }
 
 #[derive(Clone)]
 pub struct InnerConsensus {
     /// Id of the current node
-    pub id : NodeId,
+    pub id: NodeId,
     /// Configuration of the cluster this node is in
     pub config: Config,
     /// Send Consensus Commands back to the outer consensus engine
-    pub tx_consensus : Sender<ConsensusCommand>,
+    pub tx_consensus: Sender<ConsensusCommand>,
 
     pub outstanding_requests: Arc<Mutex<HashSet<ClientRequest>>>,
     /// Current state of conensus
-    pub state : Arc<Mutex<State>>,
+    pub state: Arc<Mutex<State>>,
 }
 
 #[derive(Default)]
@@ -49,16 +50,21 @@ pub struct State {
 }
 
 impl Consensus {
-    pub fn new(id : NodeId, config: Config, rx_consensus : Receiver<ConsensusCommand>, tx_consensus : Sender<ConsensusCommand>, tx_node : Sender<NodeCommand>) -> Self {
-        
+    pub fn new(
+        id: NodeId,
+        config: Config,
+        rx_consensus: Receiver<ConsensusCommand>,
+        tx_consensus: Sender<ConsensusCommand>,
+        tx_node: Sender<NodeCommand>,
+    ) -> Self {
         let inner_consensus = InnerConsensus {
             id,
             config: config.clone(),
             tx_consensus,
             outstanding_requests: Arc::new(Mutex::new(HashSet::new())),
-            state : Arc::new(Mutex::new(State::default())),
+            state: Arc::new(Mutex::new(State::default())),
         };
-        
+
         Self {
             id,
             config,
@@ -91,6 +97,18 @@ impl Consensus {
                                 message: Message::ClientRequestMessage(request),
                             })).await;
                         }
+
+                        ConsensusCommand::EnterPrePrepare(request) => {
+                            let state = self.inner.state.lock().await;
+                            let _ = self.tx_node.send(NodeCommand::BroadCastMessageCommand(BroadCastMessage {
+                                message: Message::PrePrepareMessage(PrePrepare {
+                                    view: state.view,
+                                    seq_num: state.seq_num,
+                                    digest: 0,
+                                    client_request: request.clone(),
+                                })
+                            })).await;
+                        }
                     }
                 }
             }
@@ -99,9 +117,7 @@ impl Consensus {
 }
 
 impl InnerConsensus {
-
     pub async fn process_message(&mut self, message: &Message) {
-
         match message.clone() {
             Message::PrePrepareMessage(pre_prepare) => {}
             Message::PrepareMessage(prepare) => {}
@@ -109,7 +125,6 @@ impl InnerConsensus {
                 self.process_client_request(&client_request).await;
             }
         }
-
     }
 
     pub async fn current_leader(&self) -> NodeId {
@@ -132,6 +147,18 @@ impl InnerConsensus {
         outstanding_requests.remove(request);
     }
 
+    pub async fn in_view_change(&self) -> bool {
+        let state = self.state.lock().await;
+        state.in_view_change
+    }
+
+    pub async fn increment_seq_num(&self) -> usize {
+        let mut state = self.state.lock().await;
+        let ret = state.seq_num;
+        state.seq_num += 1;
+        ret
+    }
+
     pub async fn request_is_outstanding(&self, request: &ClientRequest) -> bool {
         let outstanding_requests = self.outstanding_requests.lock().await;
         outstanding_requests.contains(request)
@@ -139,28 +166,54 @@ impl InnerConsensus {
 
     pub async fn should_accept_pre_prepare(&self, message: &PrePrepare) -> bool {
         let state = self.state.lock().await;
-        if state.view != message.view {return false;}
+        if state.view != message.view {
+            return false;
+        }
         // check if we have already seen a sequence number for this view
         true
     }
 
     pub async fn should_accept_prepare(&self, message: &Prepare) -> bool {
         let state = self.state.lock().await;
-        if state.view != message.view {return false;}
+        if state.view != message.view {
+            return false;
+        }
 
         true
     }
 
     pub async fn process_client_request(&mut self, request: &ClientRequest) {
+        if self.in_view_change().await {
+            // if we are in the view change state
+            // then we do not process any client requests
+            return;
+        }
+
         if self.id != self.current_leader().await {
             self.add_outstanding_request(request).await;
-            self.tx_consensus.send(ConsensusCommand::MisdirectedClientRequest(request.clone())).await;
+            let _ = self
+                .tx_consensus
+                .send(ConsensusCommand::MisdirectedClientRequest(request.clone()))
+                .await;
             sleep(std::time::Duration::from_secs(7)).await;
             if self.request_is_outstanding(request).await {
                 // add this point, we have hit the timeout for a request to be outstanding
                 // so we need to trigger a view change
-                println!("Triggering view change");
+                self.trigger_view_change().await;
             }
+            return;
         }
+        // at this point we are the leader and we have accepted a client request
+        // which we may begin to process
+        let _ = self
+            .tx_consensus
+            .send(ConsensusCommand::EnterPrePrepare(request.clone()))
+            .await;
+    }
+
+    async fn trigger_view_change(&mut self) {
+        println!("Triggering View Change...");
+        let mut state = self.state.lock().await;
+        state.in_view_change = true;
     }
 }
