@@ -45,7 +45,7 @@ async fn main() -> Result<()> {
         node.spawn().await;
     });
 
-    let mut consensus = Consensus::new(config.clone(), rx_consensus, tx_consensus.clone(), tx_node.clone());
+    let mut consensus = Consensus::new(id, config.clone(), rx_consensus, tx_consensus.clone(), tx_node.clone());
     let consensus_fut = tokio::spawn(async move {
         consensus.spawn().await;
     });

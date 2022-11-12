@@ -88,6 +88,8 @@ impl Node {
                         }
                     });
                 }
+
+                // make a future representing an incoming message from the consensus engine
                 
                 // future representing a timer which expires periodically and we should do some work
                 () = &mut timer => {

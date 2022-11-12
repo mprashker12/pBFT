@@ -50,7 +50,7 @@ pub struct ViewChange {
     pub checkpoint_messages: Vec<Prepare>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ClientRequest {
     pub respond_addr: SocketAddr,
     pub time_stamp : usize,
