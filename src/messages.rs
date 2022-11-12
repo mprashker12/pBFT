@@ -8,6 +8,7 @@ use crate::NodeId;
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum Message {
     PrePrepareMessage(PrePrepare),
+    PrepareMessage(Prepare),
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -24,6 +25,3 @@ pub struct Prepare {
     pub digest: usize, /* TODO: Make this some hash */
     pub id: NodeId,
 }
-
-
-

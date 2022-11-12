@@ -1,25 +1,24 @@
-use crate::messages::{Message, PrePrepare};
-use crate::{Result, NodeId};
-use crate::consensus::Consensus;
 use crate::config::Config;
+use crate::consensus::Consensus;
+use crate::messages::{Message, PrePrepare, Prepare};
+use crate::{NodeId, Result};
 
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
-use tokio::io::{BufStream, AsyncWriteExt};
+use tokio::io::{AsyncWriteExt, BufStream};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::{
-    io::{AsyncBufReadExt},
-    sync::{Mutex},
-};
 use tokio::time::{sleep, Duration, Instant};
+use tokio::{io::AsyncBufReadExt, sync::Mutex};
+
+// TODO: We may use a mpsc channel for the inner node to communicate with its parent node
 
 pub struct Node {
     /// If of this ndoe
-    pub id : NodeId,
+    pub id: NodeId,
     /// Configuration of Cluster this node is in
-    pub config : Config,
+    pub config: Config,
     /// Socket on which this node is listening for connections from peers
     pub addr: SocketAddr,
     /// Node state which will be shared across Tokio tasks
@@ -29,25 +28,32 @@ pub struct Node {
 #[derive(Clone)]
 pub struct InnerNode {
     /// Note that these connections will only be used for writing
-    pub open_write_connections : Arc<Mutex<HashMap<SocketAddr, BufStream<TcpStream>>>>,
+    pub open_write_connections: Arc<Mutex<HashMap<SocketAddr, BufStream<TcpStream>>>>,
 
-    pub consensus : Arc<Mutex<Consensus>>,
+    pub consensus: Arc<Mutex<Consensus>>,
+
+    // primarily used so that the inner node is capable of broadcasting
+    pub peer_addrs: Arc<Vec<SocketAddr>>,
 }
 
 impl Node {
-    pub fn new(id : NodeId, config: Config) -> Self {
-        
-        let addr =*config.listen_addrs.get(&id).unwrap(); 
+    pub fn new(id: NodeId, config: Config) -> Self {
+        let addr_me = *config.listen_addrs.get(&id).unwrap();
+        let mut addr_peers = Vec::<SocketAddr>::new();
+        for (_, peer_addr) in config.listen_addrs.iter() {
+            addr_peers.push(*peer_addr);
+        }
 
-        let inner = InnerNode { 
-            open_write_connections : Arc::new(Mutex::new(HashMap::new())),
+        let inner = InnerNode {
+            open_write_connections: Arc::new(Mutex::new(HashMap::new())),
             consensus: Arc::new(Mutex::new(Consensus::default())),
+            peer_addrs: Arc::new(addr_peers),
         };
-        
+
         Self {
             id,
             config,
-            addr,
+            addr: addr_me,
             inner,
         }
     }
@@ -56,19 +62,20 @@ impl Node {
         let listener = TcpListener::bind(self.addr).await.unwrap();
         let peer_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8079);
 
-        
+        println!("Node {} listening on {}", self.id, self.addr);
+
         let timer = sleep(Duration::from_secs(4));
         tokio::pin!(timer);
 
         loop {
             tokio::select! {
-                
+
                 // future representing an incoming connection
                 // we maintain the connection and only read from it
                 // perhaps updating the consensus state
                 res = listener.accept() => {
                     let (mut stream, _) = res.unwrap();
-                    let mut inner = self.inner.clone();
+                    let inner = self.inner.clone();
                     tokio::spawn(async move {
                         if let Err(e) = inner.handle_connection(&mut stream).await {
                             println!("Incoming connection terminated {}", e);
@@ -96,16 +103,23 @@ impl Node {
                             inner.open_write_connections.lock().await.remove(&peer_addr);
                         }
                     });
-                }
+                    let message = Message::PrePrepareMessage(PrePrepare {
+                        view: 104,
+                        seq_num: 105,
+                        digest: 106,
+                    });
 
+                    if self.id == 2 {
+                        self.inner.broadcast(message).await;
+                    }
+                }
             }
         }
     }
 }
 
 impl InnerNode {
-
-    pub async fn insert_write_connection(&mut self, stream : TcpStream) {
+    pub async fn insert_write_connection(&mut self, stream: TcpStream) {
         let mut connections = self.open_write_connections.lock().await;
         let peer_addr = stream.peer_addr().unwrap();
         let buf_stream = BufStream::new(stream);
@@ -119,19 +133,28 @@ impl InnerNode {
             let mut buf = String::new();
             let bytes_read = reader.read_line(&mut buf).await?;
             if bytes_read == 0 {
-                println!("Incoming read connection from {:?} has been terminated", peer_addr);
-                return Ok(())
+                println!(
+                    "Incoming read connection from {:?} has been terminated",
+                    peer_addr
+                );
+                return Ok(());
             }
             let message: Message = serde_json::from_str(&buf)?;
-            {
-                //todo: Make this a separate function
-                self.consensus.lock().await.add_to_log(message);
-            }
+            println!("Received {:?} from {}", message, peer_addr);
             match message {
-                Message::PrePrepareMessage(PrePrepare) => {
-
+                Message::PrePrepareMessage(pre_prepare) => {
+                    self.handle_pre_prepare(pre_prepare).await;
+                }
+                Message::PrepareMessage(prepare) => {
+                    self.handle_prepare(prepare).await;
                 }
             }
+        }
+    }
+
+    pub async fn broadcast(&self, message: Message) {
+        for peer_addr in self.peer_addrs.iter() {
+            let _ = self.send_message(peer_addr, message).await;
         }
     }
 
@@ -141,7 +164,7 @@ impl InnerNode {
         peer_addr: &SocketAddr,
         message: Message,
     ) -> crate::Result<()> {
-        println!("Sending message");
+        println!("Sending message {:?} to {:?}", message, peer_addr);
         let mut connections = self.open_write_connections.lock().await;
         if let std::collections::hash_map::Entry::Vacant(e) = connections.entry(*peer_addr) {
             let new_stream = BufStream::new(TcpStream::connect(peer_addr).await?);
@@ -150,12 +173,28 @@ impl InnerNode {
 
         let mut serialized_message = serde_json::to_string(&message).unwrap();
         serialized_message.push('\n');
-    
 
         let stream = connections.get_mut(peer_addr).unwrap();
-        println!("Sending {:?}", serialized_message);
-        let bytes_written = stream.get_mut().write(serialized_message.as_bytes()).await?;
-        println!("{}", bytes_written);
+        let _bytes_written = stream
+            .get_mut()
+            .write(serialized_message.as_bytes())
+            .await?;
         Ok(())
     }
+
+
+    async fn add_to_log(&self, message: &Message) {
+        self.consensus.lock().await.add_to_log(*message);
+    }
+
+    async fn handle_pre_prepare(&self, pre_prepare : PrePrepare) {
+        if self.consensus.lock().await.should_accept_pre_prepare(pre_prepare) {
+            // if we accept, we should broadcast to the network a corresponding prepare message
+            // and add both messages to the log. Otherwise, we do nothing. The consensus struct has
+            // all information needed to determine if we should accept the pre-prepare
+            self.add_to_log(&Message::PrePrepareMessage(pre_prepare)).await;
+        } 
+    }
+
+    async fn handle_prepare(&self, prepare : Prepare) {}
 }
