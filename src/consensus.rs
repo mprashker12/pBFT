@@ -257,30 +257,35 @@ impl InnerConsensus {
 
     async fn should_accept_pre_prepare(&self, message: &PrePrepare) -> bool {
         let state = self.state.lock().await;
-        let requests_seen = self.requests_seen.lock().await;
         if state.view != message.view {
             return false;
         }
         // verify that the digest of the message is equal to the hash of the client_request
         // check if we have already seen a sequence number for this view
         // have we accepted a pre-prepare message in this view with same sequence number and different digest
-        if let Some(e_pre_prepare) = requests_seen.get(&(message.seq_num, message.view)) {
-            if message.digest != *e_pre_prepare.hash() {
-                return false;
-            }
-        }
         true
     }
 
     async fn should_accept_prepare(&self, message: &Prepare) -> bool {
         let state = self.state.lock().await;
+        let requests_seen = self.requests_seen.lock().await;
+
         if state.view != message.view {
             return false;
         }
 
         // make sure we already saw a request with given view and sequence number,
         // and make sure that the digests are correct. 
-
+        if let Some(e_pre_prepare) = requests_seen.get(&(message.view, message.seq_num)) {
+            if message.digest != *e_pre_prepare.hash() {
+                return false;
+            }
+        } else {
+            // we have not seen a pre_prepare message for any request
+            // with this given (view, seq_num) pair, so we cannot accept a prepare 
+            // for this request
+            return false;
+        }
         true
     }
 
