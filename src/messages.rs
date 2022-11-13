@@ -4,6 +4,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Key, NodeId, Value};
 
+use sha2::{Sha256, Digest};
+
+
 /// Messages which are communicated between nodes in the network
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Message {
@@ -37,7 +40,8 @@ pub struct PrePrepare {
     pub id: NodeId,
     pub view: usize,
     pub seq_num: usize,
-    pub digest: usize,    /* This is going to be a hash of a client request */
+    /// Hash of the associated client request
+    pub digest: Vec<u8>, 
     pub signature: usize, /*This will be a cryptograph signature of all of the above data */
     pub client_request: ClientRequest,
 }
@@ -48,7 +52,8 @@ pub struct Prepare {
     pub id: NodeId,
     pub view: usize,
     pub seq_num: usize,
-    pub digest: usize, /* This is again going to be the hash of the corresponding client request */
+    /// Hash of the associated client request
+    pub digest: Vec<u8>, 
     pub signature: usize,
 }
 
@@ -66,6 +71,18 @@ pub struct ClientRequest {
     pub time_stamp: usize,
     pub key: Key,
     pub value: Value,
+}
+
+impl ClientRequest {
+    pub fn hash(&self) -> Vec<u8> {
+        let mut hasher = Sha256::new();
+        hasher.update(self.respond_addr.to_string().as_bytes());
+        hasher.update(self.time_stamp.to_le_bytes());
+        hasher.update(self.key.as_bytes());
+        hasher.update(self.value.to_le_bytes());
+        let result : &[u8] = &hasher.finalize();
+        result.to_vec()
+    }
 }
 
 impl Message {

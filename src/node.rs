@@ -114,6 +114,11 @@ impl InnerNode {
         let _ = reader.read_line(&mut buf).await?;
         let message: Message = serde_json::from_str(&buf)?;
         println!("Received {:?} from {}", message, peer_addr);
+
+        //TODO: Here, we have the information of - the node id who sent this message (and therefore the public key), 
+        // the signature, and the contents of the message. We can thus verify the message
+        // if the message is not cryptographically valid, then we do not even pass it to the consensus engine.
+
         let _ = self
             .tx_consensus
             .send(ConsensusCommand::ProcessMessage(message.clone()))

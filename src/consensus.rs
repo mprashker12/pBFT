@@ -7,10 +7,9 @@ use crate::NodeId;
 
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::Mutex;
-use tokio::time::{sleep, Duration};
+use tokio::time::{sleep};
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::hash::Hash;
 use std::sync::Arc;
 
 // Note that all communication between the Node and the Consensus engine takes place
@@ -120,7 +119,7 @@ impl Consensus {
                                 id: self.id,
                                 view: state.view,
                                 seq_num: state.seq_num,
-                                digest: 0,
+                                digest: request.clone().hash(),
                                 signature: 0,
                                 client_request: request,
                             };
@@ -144,7 +143,7 @@ impl Consensus {
                                 id: self.id,
                                 view: state.view,
                                 seq_num: state.seq_num,
-                                digest: 0,
+                                digest: pre_prepare.clone().digest,
                                 signature: 0,
                             };
 
@@ -163,15 +162,20 @@ impl Consensus {
                             // We saw a prepare message from the network that we deemed was valid
                             // So we increment the vote count, and if we have enough prepare votes
                             // Then we move to the commit phases
+                            let mut state = self.inner.state.lock().await;
                             let mut prepare_votes = self.inner.prepare_votes.lock().await;
+                           
+                           
+                            state.log.push_back(Message::PrepareMessage(prepare.clone()));
 
                             if let Some(curr_vote_set) = prepare_votes.get_mut(&(prepare.view, prepare.seq_num)) {
                                 curr_vote_set.insert(prepare.id);
-                                if curr_vote_set.len() > self.config.num_faulty {
+                                if curr_vote_set.len() > 2*self.config.num_faulty {
                                     // at this point, we have enough prepare votes to move into the commit phase. 
                                     let _ = self.inner.tx_consensus.send(ConsensusCommand::EnterCommit(prepare)).await;
                                 }
                             } else {
+                                // first time we got a prepare message for this view and sequence number
                                 let mut new_vote_set = HashSet::new();
                                 new_vote_set.insert(prepare.id);
                                 prepare_votes.insert((prepare.view, prepare.seq_num), new_vote_set);
@@ -253,10 +257,18 @@ impl InnerConsensus {
 
     async fn should_accept_pre_prepare(&self, message: &PrePrepare) -> bool {
         let state = self.state.lock().await;
+        let requests_seen = self.requests_seen.lock().await;
         if state.view != message.view {
             return false;
         }
+        // verify that the digest of the message is equal to the hash of the client_request
         // check if we have already seen a sequence number for this view
+        // have we accepted a pre-prepare message in this view with same sequence number and different digest
+        if let Some(e_pre_prepare) = requests_seen.get(&(message.seq_num, message.view)) {
+            if message.digest != *e_pre_prepare.hash() {
+                return false;
+            }
+        }
         true
     }
 
@@ -265,6 +277,9 @@ impl InnerConsensus {
         if state.view != message.view {
             return false;
         }
+
+        // make sure we already saw a request with given view and sequence number,
+        // and make sure that the digests are correct. 
 
         true
     }
