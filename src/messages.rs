@@ -37,11 +37,12 @@ pub struct PrePrepare {
     pub client_request: ClientRequest,
 }
 
+// Note that the Prepare message does not include the client_request
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Prepare {
     pub view: usize,
     pub seq_num: usize,
-    pub digest: usize, /* TODO: Make this some hash */
+    pub digest: usize, /* This is again going to be the hash of the corresponding client request */
     pub id: NodeId,
 }
 

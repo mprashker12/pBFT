@@ -183,6 +183,7 @@ impl InnerConsensus {
     }
 
     pub async fn process_client_request(&mut self, request: &ClientRequest) {
+
         if self.in_view_change().await {
             // if we are in the view change state
             // then we do not process any client requests
