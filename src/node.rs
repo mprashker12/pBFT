@@ -34,8 +34,6 @@ pub struct InnerNode {
     pub id: NodeId,
     /// Config of the cluster of the outer node
     pub config: Config,
-    /// Currently open connections maintained with other nodes for writing
-    pub open_write_connections: Arc<Mutex<HashMap<SocketAddr, BufStream<TcpStream>>>>,
     /// Consensus engine
     pub tx_consensus: Sender<ConsensusCommand>,
     /// Send Node Commands to itself (used internally)
@@ -57,7 +55,6 @@ impl Node {
         let inner = InnerNode {
             id,
             config: config.clone(),
-            open_write_connections: Arc::new(Mutex::new(HashMap::new())),
             tx_consensus,
             tx_node,
         };
@@ -85,7 +82,7 @@ impl Node {
                     let inner = self.inner.clone();
                     tokio::spawn(async move {
                         if let Err(e) = inner.handle_connection(&mut stream).await {
-                            println!("Incoming connection terminated {}", e);
+                            println!("Unable to read message from incoming connection {}", e);
                         }
                     });
                 }
@@ -108,44 +105,24 @@ impl Node {
 }
 
 impl InnerNode {
-    pub async fn insert_write_connection(&mut self, stream: TcpStream) {
-        let mut connections = self.open_write_connections.lock().await;
-        let peer_addr = stream.peer_addr().unwrap();
-        let buf_stream = BufStream::new(stream);
-        connections.insert(peer_addr, buf_stream);
-    }
 
     pub async fn handle_connection(&self, stream: &mut TcpStream) -> Result<()> {
         let peer_addr = stream.peer_addr().unwrap();
         let mut reader = BufStream::new(stream);
-        loop {
-            let mut buf = String::new();
-            let bytes_read = reader.read_line(&mut buf).await?;
-            if bytes_read == 0 {
-                println!(
-                    "Incoming read connection from {:?} has been terminated",
-                    peer_addr
-                );
-                return Ok(());
-            }
-            let message: Message = serde_json::from_str(&buf)?;
-            println!("Received {:?} from {}", message, peer_addr);
-            let _ = self
-                .tx_consensus
-                .send(ConsensusCommand::ProcessMessage(message.clone()))
-                .await;
-
-            if let Message::ClientRequestMessage(_) = message {
-                // we do not want to maintain persistent connections with each client connection
-                // so we terminate the connection upon receiving a client request
-                return Ok(());
-            }
-        }
+     
+        let mut buf = String::new();
+        let _ = reader.read_line(&mut buf).await?;
+        let message: Message = serde_json::from_str(&buf)?;
+        println!("Received {:?} from {}", message, peer_addr);
+        let _ = self
+            .tx_consensus
+            .send(ConsensusCommand::ProcessMessage(message.clone()))
+            .await;
+        Ok(())
     }
 
     pub async fn broadcast(&self, message: &Message) {
-        for (node_id, peer_addr) in self.config.peer_addrs.iter() {
-            if *node_id == self.id {continue;}
+        for (_, peer_addr) in self.config.peer_addrs.iter() {
             let _ = self.send_message(peer_addr, message.clone()).await;
         }
     }
@@ -157,19 +134,13 @@ impl InnerNode {
         message: Message,
     ) -> crate::Result<()> {
         println!("Sending message {:?} to {:?}", message, peer_addr);
-        let mut connections = self.open_write_connections.lock().await;
-        if let std::collections::hash_map::Entry::Vacant(e) = connections.entry(*peer_addr) {
-            let new_stream = BufStream::new(TcpStream::connect(peer_addr).await?);
-            e.insert(new_stream);
-        }
-
-        let stream = connections.get_mut(peer_addr).unwrap();
+        
+        let mut stream = BufStream::new(TcpStream::connect(peer_addr).await?);
         if let Err(e) = stream
             .get_mut()
             .write(message.serialize().as_slice())
             .await {
                 println!("Failed to send to {}", peer_addr);
-                connections.remove(peer_addr);
                 return Err(Box::new(e));
             }
         Ok(())

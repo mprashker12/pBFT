@@ -34,6 +34,7 @@ async fn main() -> Result<()> {
 
     let config = Config {
         num_nodes: 3,
+        num_faulty: 1,
         peer_addrs,
     };
 
