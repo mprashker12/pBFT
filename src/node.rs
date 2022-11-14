@@ -105,17 +105,16 @@ impl Node {
 }
 
 impl InnerNode {
-
     pub async fn handle_connection(&self, stream: &mut TcpStream) -> Result<()> {
         let peer_addr = stream.peer_addr().unwrap();
         let mut reader = BufStream::new(stream);
-     
+
         let mut buf = String::new();
         let _ = reader.read_line(&mut buf).await?;
         let message: Message = serde_json::from_str(&buf)?;
         println!("Received {:?} from {}", message, peer_addr);
 
-        //TODO: Here, we have the information of - the node id who sent this message (and therefore the public key), 
+        //TODO: Here, we have the information of - the node id who sent this message (and therefore the public key),
         // the signature, and the contents of the message. We can thus verify the message
         // if the message is not cryptographically valid, then we do not even pass it to the consensus engine.
 
@@ -139,15 +138,12 @@ impl InnerNode {
         message: Message,
     ) -> crate::Result<()> {
         println!("Sending message {:?} to {:?}", message, peer_addr);
-        
+
         let mut stream = BufStream::new(TcpStream::connect(peer_addr).await?);
-        if let Err(e) = stream
-            .get_mut()
-            .write(message.serialize().as_slice())
-            .await {
-                println!("Failed to send to {}", peer_addr);
-                return Err(Box::new(e));
-            }
+        if let Err(e) = stream.get_mut().write(message.serialize().as_slice()).await {
+            println!("Failed to send to {}", peer_addr);
+            return Err(Box::new(e));
+        }
         Ok(())
     }
 }

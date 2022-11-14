@@ -1,13 +1,13 @@
 use crate::config::Config;
 use crate::messages::{
-    BroadCastMessage, ClientRequest, ConsensusCommand, Message, NodeCommand, PrePrepare, Prepare,
-    SendMessage,
+    BroadCastMessage, ClientRequest, Commit, ConsensusCommand, Message, NodeCommand, PrePrepare,
+    Prepare, SendMessage,
 };
 use crate::NodeId;
 
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::Mutex;
-use tokio::time::{sleep};
+use tokio::time::sleep;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
@@ -36,11 +36,16 @@ pub struct InnerConsensus {
     pub config: Config,
     /// Send Consensus Commands back to the outer consensus engine
     pub tx_consensus: Sender<ConsensusCommand>,
-    ///
+    /// Maps (view, seq_num) to client request seen for that pair
+    /// A request is inserted once we accept a pre-prepare message from the network for this request
     pub requests_seen: Arc<Mutex<HashMap<(usize, usize), ClientRequest>>>,
 
     pub prepare_votes: Arc<Mutex<HashMap<(usize, usize), HashSet<NodeId>>>>,
 
+    pub commit_votes: Arc<Mutex<HashMap<(usize, usize), HashSet<NodeId>>>>,
+    /// These are added when we either get a misdirected client request 
+    /// or we accept a pre-prepare message
+    /// Used to initiate view changes
     pub outstanding_requests: Arc<Mutex<HashSet<ClientRequest>>>,
     /// Current state of conensus
     pub state: Arc<Mutex<State>>,
@@ -68,6 +73,7 @@ impl Consensus {
             tx_consensus,
             requests_seen: Arc::new(Mutex::new(HashMap::new())),
             prepare_votes: Arc::new(Mutex::new(HashMap::new())),
+            commit_votes: Arc::new(Mutex::new(HashMap::new())),
             outstanding_requests: Arc::new(Mutex::new(HashSet::new())),
             state: Arc::new(Mutex::new(State::default())),
         };
@@ -101,7 +107,8 @@ impl Consensus {
                             // we forward the request to the leader. We started a timer
                             // which, if it expires and the request is still outstanding,
                             // will initiate the view change protocol
-
+                            self.inner.add_outstanding_request(&request).await;
+                            
                             let leader = self.inner.current_leader().await;
                             let leader_addr = self.config.peer_addrs.get(&leader).unwrap();
                             let _ = self.tx_node.send(NodeCommand::SendMessageCommand(SendMessage {
@@ -137,6 +144,7 @@ impl Consensus {
                             let mut state = self.inner.state.lock().await;
                             let mut requests_seen = self.inner.requests_seen.lock().await;
 
+                            self.inner.add_outstanding_request(&pre_prepare.client_request).await;
                             requests_seen.insert((state.view, state.seq_num), pre_prepare.client_request.clone());
 
                             let prepare = Prepare {
@@ -155,7 +163,6 @@ impl Consensus {
 
                             state.log.push_back(Message::PrePrepareMessage(pre_prepare));
                             state.log.push_back(prepare_message);
-
                         }
 
                         ConsensusCommand::AcceptPrepare(prepare) => {
@@ -164,14 +171,14 @@ impl Consensus {
                             // Then we move to the commit phases
                             let mut state = self.inner.state.lock().await;
                             let mut prepare_votes = self.inner.prepare_votes.lock().await;
-                           
-                           
+
+
                             state.log.push_back(Message::PrepareMessage(prepare.clone()));
 
                             if let Some(curr_vote_set) = prepare_votes.get_mut(&(prepare.view, prepare.seq_num)) {
                                 curr_vote_set.insert(prepare.id);
                                 if curr_vote_set.len() > 2*self.config.num_faulty {
-                                    // at this point, we have enough prepare votes to move into the commit phase. 
+                                    // at this point, we have enough prepare votes to move into the commit phase.
                                     let _ = self.inner.tx_consensus.send(ConsensusCommand::EnterCommit(prepare)).await;
                                 }
                             } else {
@@ -183,7 +190,52 @@ impl Consensus {
                         }
 
                         ConsensusCommand::EnterCommit(prepare) => {
-                            println!("BEGINNING COMMIT PHASE")
+                            let state = self.inner.state.lock().await;
+                            
+                            println!("BEGINNING COMMIT PHASE");
+                            let commit = Commit {
+                                id: self.id,
+                                view: state.view,
+                                seq_num: state.seq_num,
+                                digest: prepare.digest,
+                                signature: 0,
+                            };
+                            let commit_message = Message::CommitMessage(commit);
+                            let _ = self.tx_node.send(NodeCommand::BroadCastMessageCommand(BroadCastMessage {
+                                message: commit_message,
+                            })).await;
+                        }
+
+                        ConsensusCommand::AcceptCommit(commit) => {
+                            // We received a Commit Message for a request that we deemed valid
+                            // so we increment the vote count
+
+                            let mut state = self.inner.state.lock().await;
+                            let mut commit_votes = self.inner.commit_votes.lock().await;
+
+
+                            state.log.push_back(Message::CommitMessage(commit.clone()));
+
+                            if let Some(curr_vote_set) = commit_votes.get_mut(&(commit.view, commit.seq_num)) {
+                                curr_vote_set.insert(commit.id);
+                                if curr_vote_set.len() > 2*self.config.num_faulty {
+                                    // At this point, we have enough commit votes to commit the message
+                                    let _ = self.inner.tx_consensus.send(ConsensusCommand::ApplyClientRequest(commit)).await;
+                                }
+                            } else {
+                                // first time we got a prepare message for this view and sequence number
+                                let mut new_vote_set = HashSet::new();
+                                new_vote_set.insert(commit.id);
+                                commit_votes.insert((commit.view, commit.seq_num), new_vote_set);
+                            }
+                        }
+
+                        ConsensusCommand::ApplyClientRequest(commit) => {
+                            // we now have permission to apply the client request
+                            let mut state = self.inner.state.lock().await;
+                            let mut requests_seen = self.inner.requests_seen.lock().await;
+                            let client_request = requests_seen.get(&(commit.view, commit.seq_num)).unwrap();
+                            self.inner.remove_outstanding_request(&client_request).await;
                         }
                     }
                 }
@@ -212,6 +264,14 @@ impl InnerConsensus {
                         .await;
                 }
             }
+            Message::CommitMessage(commit) => {
+                if self.should_accept_commit(&commit).await {
+                    let _ = self
+                        .tx_consensus
+                        .send(ConsensusCommand::AcceptCommit(commit))
+                        .await;
+                }
+            }
             Message::ClientRequestMessage(client_request) => {
                 self.process_client_request(&client_request).await;
             }
@@ -221,11 +281,6 @@ impl InnerConsensus {
     async fn current_leader(&self) -> NodeId {
         let state = self.state.lock().await;
         state.view % self.config.num_nodes
-    }
-
-    async fn add_to_log(&mut self, message: &Message) {
-        let mut state = self.state.lock().await;
-        state.log.push_back(message.clone());
     }
 
     async fn add_outstanding_request(&self, request: &ClientRequest) {
@@ -248,6 +303,7 @@ impl InnerConsensus {
         state.in_view_change
     }
 
+    // returns previous sequence number
     async fn increment_seq_num(&self) -> usize {
         let mut state = self.state.lock().await;
         let ret = state.seq_num;
@@ -275,17 +331,21 @@ impl InnerConsensus {
         }
 
         // make sure we already saw a request with given view and sequence number,
-        // and make sure that the digests are correct. 
+        // and make sure that the digests are correct.
         if let Some(e_pre_prepare) = requests_seen.get(&(message.view, message.seq_num)) {
             if message.digest != *e_pre_prepare.hash() {
                 return false;
             }
         } else {
             // we have not seen a pre_prepare message for any request
-            // with this given (view, seq_num) pair, so we cannot accept a prepare 
+            // with this given (view, seq_num) pair, so we cannot accept a prepare
             // for this request
             return false;
         }
+        true
+    }
+
+    async fn should_accept_commit(&self, messsage: &Commit) -> bool {
         true
     }
 
@@ -297,7 +357,6 @@ impl InnerConsensus {
         }
 
         if self.id != self.current_leader().await {
-            self.add_outstanding_request(request).await;
             let _ = self
                 .tx_consensus
                 .send(ConsensusCommand::MisdirectedClientRequest(request.clone()))

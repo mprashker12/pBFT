@@ -4,14 +4,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Key, NodeId, Value};
 
-use sha2::{Sha256, Digest};
-
+use sha2::{Digest, Sha256};
 
 /// Messages which are communicated between nodes in the network
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Message {
     PrePrepareMessage(PrePrepare),
     PrepareMessage(Prepare),
+    CommitMessage(Commit),
     ClientRequestMessage(ClientRequest),
 }
 
@@ -24,6 +24,8 @@ pub enum ConsensusCommand {
     AcceptPrePrepare(PrePrepare),
     AcceptPrepare(Prepare),
     EnterCommit(Prepare),
+    AcceptCommit(Commit),
+    ApplyClientRequest(Commit),
 }
 
 /// Commands to Node
@@ -41,19 +43,30 @@ pub struct PrePrepare {
     pub view: usize,
     pub seq_num: usize,
     /// Hash of the associated client request
-    pub digest: Vec<u8>, 
+    pub digest: Vec<u8>,
     pub signature: usize, /*This will be a cryptograph signature of all of the above data */
     pub client_request: ClientRequest,
 }
 
 // Note that the Prepare message does not include the client_request
+// because pre-prepare message already included it
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Prepare {
     pub id: NodeId,
     pub view: usize,
     pub seq_num: usize,
     /// Hash of the associated client request
-    pub digest: Vec<u8>, 
+    pub digest: Vec<u8>,
+    pub signature: usize,
+}
+
+// Note that the Prepare message does not include the client_request
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Commit {
+    pub id: NodeId,
+    pub view: usize,
+    pub seq_num: usize,
+    pub digest: Vec<u8>,
     pub signature: usize,
 }
 
@@ -80,7 +93,7 @@ impl ClientRequest {
         hasher.update(self.time_stamp.to_le_bytes());
         hasher.update(self.key.as_bytes());
         hasher.update(self.value.to_le_bytes());
-        let result : &[u8] = &hasher.finalize();
+        let result: &[u8] = &hasher.finalize();
         result.to_vec()
     }
 }
