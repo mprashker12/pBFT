@@ -13,6 +13,7 @@ pub enum Message {
     PrepareMessage(Prepare),
     CommitMessage(Commit),
     ClientRequestMessage(ClientRequest),
+    ClientResponseMessage(ClientResponse),
 }
 
 /// Commands to Consensus Engine
@@ -20,6 +21,7 @@ pub enum Message {
 pub enum ConsensusCommand {
     ProcessMessage(Message),
     MisdirectedClientRequest(ClientRequest),
+    ProcessClientRequest(ClientRequest),
     InitPrePrepare(ClientRequest),
     AcceptPrePrepare(PrePrepare),
     AcceptPrepare(Prepare),
@@ -84,7 +86,16 @@ pub struct ClientRequest {
     pub respond_addr: SocketAddr,
     pub time_stamp: usize,
     pub key: Key,
+    pub value: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct ClientResponse {
+    pub id: NodeId,
+    pub time_stamp: usize,
+    pub key: Key,
     pub value: Value,
+    pub success: bool,
 }
 
 impl ClientRequest {
@@ -93,7 +104,9 @@ impl ClientRequest {
         hasher.update(self.respond_addr.to_string().as_bytes());
         hasher.update(self.time_stamp.to_le_bytes());
         hasher.update(self.key.as_bytes());
-        hasher.update(self.value.to_le_bytes());
+        if self.value.is_some() {
+            hasher.update(self.value.unwrap().to_le_bytes());
+        }
         let result: &[u8] = &hasher.finalize();
         result.to_vec()
     }

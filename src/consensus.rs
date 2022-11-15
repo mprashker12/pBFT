@@ -1,9 +1,9 @@
 use crate::config::Config;
 use crate::messages::{
     BroadCastMessage, ClientRequest, Commit, ConsensusCommand, Message, NodeCommand, PrePrepare,
-    Prepare, SendMessage,
+    Prepare, SendMessage
 };
-use crate::NodeId;
+use crate::{NodeId, Key, Value};
 
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::Mutex;
@@ -57,6 +57,7 @@ pub struct State {
     pub view: usize,
     pub seq_num: usize,
     pub log: VecDeque<Message>,
+    pub store: HashMap<Key, Value>,
 }
 
 impl Consensus {
@@ -87,6 +88,10 @@ impl Consensus {
         }
     }
 
+    pub fn current_leader(&self, state: &State) -> NodeId {
+        state.view % self.config.num_nodes
+    }
+
     pub async fn spawn(&mut self) {
         loop {
             tokio::select! {
@@ -107,9 +112,10 @@ impl Consensus {
                             // we forward the request to the leader. We started a timer
                             // which, if it expires and the request is still outstanding,
                             // will initiate the view change protocol
+                            let state = self.inner.state.lock().await;
                             self.inner.add_outstanding_request(&request).await;
                             
-                            let leader = self.inner.current_leader().await;
+                            let leader = self.current_leader(&state);
                             let leader_addr = self.config.peer_addrs.get(&leader).unwrap();
                             let _ = self.tx_node.send(NodeCommand::SendMessageCommand(SendMessage {
                                 destination: *leader_addr,
@@ -121,6 +127,24 @@ impl Consensus {
                             tokio::spawn(async move {
                                 inner.wait_for_outstanding(&request.clone()).await;
                             });
+                        }
+
+                        ConsensusCommand::ProcessClientRequest(request) => {
+                            let state = self.inner.state.lock().await;
+                            
+                            if self.id != self.current_leader(&state){
+                                let _ = self.inner
+                                    .tx_consensus
+                                    .send(ConsensusCommand::MisdirectedClientRequest(request.clone()))
+                                    .await;
+                            } else {
+                            // at this point we are the leader and we have accepted a client request
+                            // which we may begin to process
+                            let _ = self.inner
+                                .tx_consensus
+                                .send(ConsensusCommand::InitPrePrepare(request.clone()))
+                                .await;
+                            }
                         }
 
                         ConsensusCommand::InitPrePrepare(request) => {
@@ -246,8 +270,8 @@ impl Consensus {
 
                         ConsensusCommand::InitViewChange(request) => {
                             let mut state = self.inner.state.lock().await;
-                            if state.in_view_change {
-                                // we are already in a view change state
+                            if state.in_view_change || self.current_leader(&state) == self.id {
+                                // we are already in a view change state or we are currently the leader
                                 return;
                             }
                             println!("Initializing view change...");
@@ -256,12 +280,21 @@ impl Consensus {
 
                         ConsensusCommand::ApplyClientRequest(commit) => {
                             // we now have permission to apply the client request
-                            let state = self.inner.state.lock().await;
+                            let mut state = self.inner.state.lock().await;
                             let requests_seen = self.inner.requests_seen.lock().await;
-
                             //remove the request from the outstanding requests so that we can trigger the view change
                             let client_request = requests_seen.get(&(commit.view, commit.seq_num)).unwrap();
                             self.inner.remove_outstanding_request(client_request).await;
+
+                            if client_request.value.is_some() {
+                                // request is a set request
+                                state.store.insert(client_request.clone().key, client_request.clone().value.unwrap());
+                            } {
+                                //request is a get request
+                            }
+
+                            state.seq_num += 1;
+
                         }
                     }
                 }
@@ -299,14 +332,14 @@ impl InnerConsensus {
                 }
             }
             Message::ClientRequestMessage(client_request) => {
-                self.process_client_request(&client_request).await;
+                if self.should_process_client_request(&client_request).await {
+                    let _ = self.tx_consensus.send(ConsensusCommand::ProcessClientRequest(client_request)).await;
+                }
+            }
+            Message::ClientResponseMessage(_) => {
+                // we should never receive a client response message
             }
         }
-    }
-
-    async fn current_leader(&self) -> NodeId {
-        let state = self.state.lock().await;
-        state.view % self.config.num_nodes
     }
 
     async fn add_outstanding_request(&self, request: &ClientRequest) {
@@ -327,14 +360,6 @@ impl InnerConsensus {
     async fn in_view_change(&self) -> bool {
         let state = self.state.lock().await;
         state.in_view_change
-    }
-
-    // returns previous sequence number
-    async fn increment_seq_num(&self) -> usize {
-        let mut state = self.state.lock().await;
-        let ret = state.seq_num;
-        state.seq_num += 1;
-        ret
     }
 
     async fn should_accept_pre_prepare(&self, message: &PrePrepare) -> bool {
@@ -375,32 +400,19 @@ impl InnerConsensus {
         true
     }
 
+    async fn should_process_client_request(&mut self, request: &ClientRequest) -> bool {
+        if self.in_view_change().await {
+            // if we are in the view change state
+            // then we do not process any client requests
+            return false;
+        }
+        true
+    }
+
     async fn wait_for_outstanding(&self, request: &ClientRequest) {
         sleep(std::time::Duration::from_secs(5)).await;
         if self.request_is_outstanding(&request.clone()).await {
             let _ = self.tx_consensus.send(ConsensusCommand::InitViewChange(request.clone())).await;
-        }
-    }
-
-    async fn process_client_request(&mut self, request: &ClientRequest) {
-        if self.in_view_change().await {
-            // if we are in the view change state
-            // then we do not process any client requests
-            return;
-        }
-
-        if self.id != self.current_leader().await {
-            let _ = self
-                .tx_consensus
-                .send(ConsensusCommand::MisdirectedClientRequest(request.clone()))
-                .await;
-        } else {
-        // at this point we are the leader and we have accepted a client request
-        // which we may begin to process
-        let _ = self
-            .tx_consensus
-            .send(ConsensusCommand::InitPrePrepare(request.clone()))
-            .await;
         }
     }
 }

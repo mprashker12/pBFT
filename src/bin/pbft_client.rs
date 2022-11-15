@@ -15,8 +15,8 @@ async fn main() -> std::io::Result<()> {
     let message: Message = Message::ClientRequestMessage(ClientRequest {
         respond_addr: me_addr,
         time_stamp: 0,
-        key: String::from("abc"),
-        value: 3,
+        key: String::from("def"),
+        value: Some(3),
     });
     let _bytes_written = node_stream.write(message.serialize().as_slice()).await?;
 
