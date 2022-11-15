@@ -25,6 +25,7 @@ pub enum ConsensusCommand {
     AcceptPrepare(Prepare),
     EnterCommit(Prepare),
     AcceptCommit(Commit),
+    InitViewChange(ClientRequest),
     ApplyClientRequest(Commit),
 }
 

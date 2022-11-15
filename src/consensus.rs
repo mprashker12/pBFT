@@ -113,8 +113,14 @@ impl Consensus {
                             let leader_addr = self.config.peer_addrs.get(&leader).unwrap();
                             let _ = self.tx_node.send(NodeCommand::SendMessageCommand(SendMessage {
                                 destination: *leader_addr,
-                                message: Message::ClientRequestMessage(request),
+                                message: Message::ClientRequestMessage(request.clone()),
                             })).await;
+
+
+                            let inner = self.inner.clone();
+                            tokio::spawn(async move {
+                                inner.wait_for_outstanding(&request.clone()).await;
+                            });
                         }
 
                         ConsensusCommand::InitPrePrepare(request) => {
@@ -145,6 +151,9 @@ impl Consensus {
                             let mut requests_seen = self.inner.requests_seen.lock().await;
 
                             self.inner.add_outstanding_request(&pre_prepare.client_request).await;
+                            // at this point, we need to trigger a timer, and if the timer expires 
+                            // and the request is still outstanding, then we need to trigger a view change
+                            // as this is evidence that the system has stopped making progress
                             requests_seen.insert((state.view, state.seq_num), pre_prepare.client_request.clone());
 
                             let prepare = Prepare {
@@ -161,8 +170,13 @@ impl Consensus {
                             })).await;
 
 
-                            state.log.push_back(Message::PrePrepareMessage(pre_prepare));
+                            state.log.push_back(Message::PrePrepareMessage(pre_prepare.clone()));
                             state.log.push_back(prepare_message);
+
+                            let inner = self.inner.clone();
+                            tokio::spawn(async move {
+                                inner.wait_for_outstanding(&pre_prepare.client_request).await;
+                            });
                         }
 
                         ConsensusCommand::AcceptPrepare(prepare) => {
@@ -230,12 +244,24 @@ impl Consensus {
                             }
                         }
 
+                        ConsensusCommand::InitViewChange(request) => {
+                            let mut state = self.inner.state.lock().await;
+                            if state.in_view_change {
+                                // we are already in a view change state
+                                return;
+                            }
+                            println!("Initializing view change...");
+                            state.in_view_change = true;
+                        }
+
                         ConsensusCommand::ApplyClientRequest(commit) => {
                             // we now have permission to apply the client request
-                            let mut state = self.inner.state.lock().await;
-                            let mut requests_seen = self.inner.requests_seen.lock().await;
+                            let state = self.inner.state.lock().await;
+                            let requests_seen = self.inner.requests_seen.lock().await;
+
+                            //remove the request from the outstanding requests so that we can trigger the view change
                             let client_request = requests_seen.get(&(commit.view, commit.seq_num)).unwrap();
-                            self.inner.remove_outstanding_request(&client_request).await;
+                            self.inner.remove_outstanding_request(client_request).await;
                         }
                     }
                 }
@@ -349,6 +375,13 @@ impl InnerConsensus {
         true
     }
 
+    async fn wait_for_outstanding(&self, request: &ClientRequest) {
+        sleep(std::time::Duration::from_secs(5)).await;
+        if self.request_is_outstanding(&request.clone()).await {
+            let _ = self.tx_consensus.send(ConsensusCommand::InitViewChange(request.clone())).await;
+        }
+    }
+
     async fn process_client_request(&mut self, request: &ClientRequest) {
         if self.in_view_change().await {
             // if we are in the view change state
@@ -361,25 +394,13 @@ impl InnerConsensus {
                 .tx_consensus
                 .send(ConsensusCommand::MisdirectedClientRequest(request.clone()))
                 .await;
-            sleep(std::time::Duration::from_secs(7)).await;
-            if self.request_is_outstanding(request).await {
-                // add this point, we have hit the timeout for a request to be outstanding
-                // so we need to trigger a view change
-                self.init_view_change().await;
-            }
-            return;
-        }
+        } else {
         // at this point we are the leader and we have accepted a client request
         // which we may begin to process
         let _ = self
             .tx_consensus
             .send(ConsensusCommand::InitPrePrepare(request.clone()))
             .await;
-    }
-
-    async fn init_view_change(&mut self) {
-        println!("Triggering View Change...");
-        let mut state = self.state.lock().await;
-        state.in_view_change = true;
+        }
     }
 }
