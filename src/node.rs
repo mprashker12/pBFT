@@ -112,7 +112,7 @@ impl InnerNode {
         let mut buf = String::new();
         let _ = reader.read_line(&mut buf).await?;
         let message: Message = serde_json::from_str(&buf)?;
-        println!("Received {:?} from {}", message, peer_addr);
+        //println!("Received {:?} from {}", message, peer_addr);
 
         //TODO: Here, we have the information of - the node id who sent this message (and therefore the public key),
         // the signature, and the contents of the message. We can thus verify the message
@@ -137,7 +137,7 @@ impl InnerNode {
         peer_addr: &SocketAddr,
         message: Message,
     ) -> crate::Result<()> {
-        println!("Sending message {:?} to {:?}", message, peer_addr);
+        //println!("Sending message {:?} to {:?}", message, peer_addr);
 
         let mut stream = BufStream::new(TcpStream::connect(peer_addr).await?);
         if let Err(e) = stream.get_mut().write(message.serialize().as_slice()).await {

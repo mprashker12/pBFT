@@ -1,12 +1,12 @@
-use crate::NodeId;
 use crate::config::Config;
-use crate::messages::{ConsensusCommand, ClientRequest};
+use crate::messages::{ClientRequest, ConsensusCommand};
+use crate::NodeId;
 
 use std::collections::HashSet;
 use std::sync::Arc;
 
 use tokio::sync::mpsc::Sender;
-use tokio::sync::{Mutex};
+use tokio::sync::Mutex;
 use tokio::time::sleep;
 
 #[derive(Clone)]
