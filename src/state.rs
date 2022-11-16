@@ -4,6 +4,8 @@ use crate::messages::{ClientRequest, Commit, Message, PrePrepare, Prepare};
 use crate::{Key, NodeId, Value};
 use std::collections::{HashMap, HashSet, VecDeque};
 
+use sha2::{Digest, Sha256};
+
 #[derive(Default)]
 pub struct State {
     pub config: Config,
@@ -103,10 +105,16 @@ impl State {
         self.last_seq_num_committed = commit.seq_num;
     }
 
+    /// Sha256 hash of the state store
     pub fn digest(&self) -> Vec<u8> {
-        serde_json::to_string(&self.message_bank.log)
+        let mut hasher = Sha256::new();
+
+        let state_bytes = serde_json::to_string(&self.store)
             .unwrap()
             .as_bytes()
-            .into()
+            .to_vec();
+
+        hasher.update(state_bytes);
+        hasher.finalize().as_slice().to_vec()
     }
 }

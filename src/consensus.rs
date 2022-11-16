@@ -225,8 +225,6 @@ impl Consensus {
                                 .tx_consensus
                                 .send(ConsensusCommand::AcceptPrepare(e_prepare.clone()))
                                 .await;
-                        } else {
-                            println!("{:?}, {:?}", e_prepare, pre_prepare);
                         }
                     }
 
@@ -381,6 +379,8 @@ impl Consensus {
 
                     println!("Applying client request with seq_num {}", commit.seq_num);
                     self.state.apply_commit(&client_request, &commit);
+
+                    // The request we just committed was enough to now trigger a checkpoint
                     if self.state.last_seq_num_committed % self.config.checkpoint_frequency == 0 {
                         //trigger the checkpoint process
                     }
