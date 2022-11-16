@@ -38,6 +38,7 @@ pub enum NodeCommand {
     BroadCastMessageCommand(BroadCastMessage),
 }
 
+
 // Messages
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -64,7 +65,7 @@ pub struct Prepare {
 }
 
 impl Prepare {
-    // does this prepare message correspond to the passed in pre_prepare message
+    // does this prepare message correspond to the pre_prepare message
     pub fn corresponds_to(&self, pre_prepare: &PrePrepare) -> bool {
         if self.id != pre_prepare.id {return false;}
         if self.view != pre_prepare.view {return false;}
@@ -76,13 +77,26 @@ impl Prepare {
 }
 
 // Note that the Prepare message does not include the client_request
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Commit {
     pub id: NodeId,
     pub view: usize,
     pub seq_num: usize,
     pub digest: Vec<u8>,
     pub signature: usize,
+}
+
+impl Commit {
+    // does this commit message correspond to the prepare message
+    pub fn corresponds_to(&self, prepare: &Prepare) -> bool {
+        if self.id != prepare.id {return false;}
+        if self.view != prepare.view {return false;}
+        if self.seq_num != prepare.seq_num {return false;}
+        if self.digest != prepare.digest {return false;}
+        if self.signature != prepare.signature {return false;}
+        true
+    }
+
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

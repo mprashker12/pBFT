@@ -11,6 +11,7 @@ pub mod messages;
 pub mod node;
 pub mod state;
 pub mod view_changer;
+pub mod message_bank;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
