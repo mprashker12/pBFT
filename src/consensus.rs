@@ -31,6 +31,8 @@ pub struct Consensus {
     /// A request is inserted once we accept a pre-prepare message from the network for this request
     pub requests_seen: HashMap<(usize, usize), ClientRequest>,
 
+    pub outstanding_prepares: HashSet<Prepare>,
+
     pub prepare_votes: HashMap<(usize, usize), HashSet<NodeId>>,
 
     pub commit_votes: HashMap<(usize, usize), HashSet<NodeId>>,
@@ -62,6 +64,7 @@ impl Consensus {
             tx_node,
             tx_consensus,
             requests_seen: HashMap::new(),
+            outstanding_prepares: HashSet::new(),
             prepare_votes: HashMap::new(),
             commit_votes: HashMap::new(),
             state: State::default(),
@@ -79,6 +82,7 @@ impl Consensus {
                 ConsensusCommand::ProcessMessage(message) => {
                     match message.clone() {
                         Message::PrePrepareMessage(pre_prepare) => {
+                            println!("Saw preprepare from {}", pre_prepare.id);
                             if self.should_accept_pre_prepare(&self.state, &pre_prepare) {
                                 let _ = self
                                     .tx_consensus
@@ -93,9 +97,12 @@ impl Consensus {
                                     .tx_consensus
                                     .send(ConsensusCommand::AcceptPrepare(prepare))
                                     .await;
+                            } else {
+                                self.outstanding_prepares.insert(prepare.clone());
                             }
                         }
                         Message::CommitMessage(commit) => {
+                            println!("Saw commit from {}", commit.id);
                             if self.should_accept_commit(&self.state, &commit).await {
                                 let _ = self
                                     .tx_consensus
@@ -187,7 +194,6 @@ impl Consensus {
                 ConsensusCommand::AcceptPrePrepare(pre_prepare) => {
                     // We received a PrePrepare message from the network, and we see no violations
                     // So we will broadcast a corresponding prepare message and begin to count votes
-                    println!("Received preprepare from {}", pre_prepare.id);
 
                     self.requests_seen.insert(
                         (pre_prepare.view, pre_prepare.seq_num),
@@ -215,6 +221,15 @@ impl Consensus {
                         .push_back(Message::PrePrepareMessage(pre_prepare.clone()));
                     self.state.log.push_back(prepare_message);
 
+                    // we may already have a got a prepare message which we did not accept because
+                    // we did not receive this pre-prepare message message yet
+                    for e_prepare in self.outstanding_prepares.iter() {
+                        if e_prepare.corresponds_to(&pre_prepare) {
+                            println!("Found outstanding prepare from {}", e_prepare.id);
+                            let _ = self.tx_consensus.send(ConsensusCommand::AcceptPrepare(e_prepare.clone())).await;
+                        }
+                    }
+
                     // at this point, we need to trigger a timer, and if the timer expires
                     // and the request is still outstanding, then we need to trigger a view change
                     // as this is evidence that the system has stopped making progress
@@ -238,7 +253,11 @@ impl Consensus {
                     // Then we move to the commit phases
 
                     println!("Accepted Prepare from {}", prepare.id);
-
+                    
+                    // we are not accepting this prepare, so if it is our outstandin set, then
+                    //we may remove it
+                    self.outstanding_prepares.remove(&prepare);
+                    
                     self.state
                         .log
                         .push_back(Message::PrepareMessage(prepare.clone()));
@@ -286,7 +305,7 @@ impl Consensus {
                     // We received a Commit Message for a request that we deemed valid
                     // so we increment the vote count
 
-                    println!("Got commit from {}", commit.id);
+                    println!("Accepted commit from {}", commit.id);
 
                     self.state
                         .log
@@ -382,6 +401,7 @@ impl Consensus {
             // we have not seen a pre_prepare message for any request
             // with this given (view, seq_num) pair, so we cannot accept a prepare
             // for this request
+            
             return false;
         }
         true

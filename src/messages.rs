@@ -53,7 +53,7 @@ pub struct PrePrepare {
 
 // Note that the Prepare message does not include the client_request
 // because pre-prepare message already included it
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Prepare {
     pub id: NodeId,
     pub view: usize,
@@ -61,6 +61,18 @@ pub struct Prepare {
     /// Hash of the associated client request
     pub digest: Vec<u8>,
     pub signature: usize,
+}
+
+impl Prepare {
+    // does this prepare message correspond to the passed in pre_prepare message
+    pub fn corresponds_to(&self, pre_prepare: &PrePrepare) -> bool {
+        if self.id != pre_prepare.id {return false;}
+        if self.view != pre_prepare.view {return false;}
+        if self.seq_num != pre_prepare.seq_num {return false;}
+        if self.digest != pre_prepare.digest {return false;}
+        if self.signature != pre_prepare.signature {return false;}
+        true
+    }
 }
 
 // Note that the Prepare message does not include the client_request
