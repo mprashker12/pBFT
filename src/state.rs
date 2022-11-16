@@ -66,6 +66,7 @@ impl State {
 
     pub fn apply_commit(&mut self, request: &ClientRequest, commit: &Commit) {
 
+        // todo - get the request from the commit view and seq num
         
         if request.value.is_some() {
             // request is a set request

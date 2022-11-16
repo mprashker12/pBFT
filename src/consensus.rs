@@ -1,16 +1,15 @@
 use crate::config::Config;
-use crate::message_bank::MessageBank;
 use crate::messages::{
-    BroadCastMessage, ClientRequest, Commit, ConsensusCommand, Message, NodeCommand, PrePrepare,
+    BroadCastMessage, Commit, ConsensusCommand, Message, NodeCommand, PrePrepare,
     Prepare, SendMessage,
 };
 use crate::state::State;
 use crate::view_changer::ViewChanger;
-use crate::{Key, NodeId, Value};
+use crate::{NodeId};
 
 use tokio::sync::mpsc::{Receiver, Sender};
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashSet};
 use std::sync::{Arc, Mutex};
 
 // Note that all communication between the Node and the Consensus engine takes place

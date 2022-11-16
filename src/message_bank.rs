@@ -1,7 +1,6 @@
 use crate::{NodeId};
-use crate::messages::{Message, ClientRequest, Prepare, Commit, PrePrepare};
+use crate::messages::{Message, ClientRequest, Prepare, Commit};
 
-use std::sync::{Arc, Mutex};
 use std::collections::{VecDeque, HashMap, HashSet};
 
 #[derive(Default)]
