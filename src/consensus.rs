@@ -1,15 +1,15 @@
 use crate::config::Config;
 use crate::messages::{
-    BroadCastMessage, Commit, ConsensusCommand, Message, NodeCommand, PrePrepare,
-    Prepare, SendMessage,
+    BroadCastMessage, Commit, ConsensusCommand, Message, NodeCommand, PrePrepare, Prepare,
+    SendMessage,
 };
 use crate::state::State;
 use crate::view_changer::ViewChanger;
-use crate::{NodeId};
+use crate::NodeId;
 
 use tokio::sync::mpsc::{Receiver, Sender};
 
-use std::collections::{HashSet};
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 // Note that all communication between the Node and the Consensus engine takes place
@@ -40,9 +40,11 @@ impl Consensus {
         tx_consensus: Sender<ConsensusCommand>,
         tx_node: Sender<NodeCommand>,
     ) -> Self {
+        let state = State {
+            config: config.clone(),
+            ..Default::default()
+        };
 
-        let state = State { config: config.clone(), ..Default::default() };
-        
         let view_changer = ViewChanger {
             id,
             config: config.clone(),
@@ -67,7 +69,6 @@ impl Consensus {
             let cmd = res.unwrap();
             //println!("Consensus Engine Received Command {:?}", cmd);
             match cmd {
-                
                 ConsensusCommand::ProcessMessage(message) => {
                     match message.clone() {
                         Message::PrePrepareMessage(pre_prepare) => {
@@ -87,7 +88,10 @@ impl Consensus {
                                     .send(ConsensusCommand::AcceptPrepare(prepare))
                                     .await;
                             } else {
-                                self.state.message_bank.outstanding_prepares.insert(prepare.clone());
+                                self.state
+                                    .message_bank
+                                    .outstanding_prepares
+                                    .insert(prepare.clone());
                             }
                         }
                         Message::CommitMessage(commit) => {
@@ -98,14 +102,14 @@ impl Consensus {
                                     .send(ConsensusCommand::AcceptCommit(commit))
                                     .await;
                             } else {
-                                self.state.message_bank.outstanding_commits.insert(commit.clone());
+                                self.state
+                                    .message_bank
+                                    .outstanding_commits
+                                    .insert(commit.clone());
                             }
                         }
                         Message::ClientRequestMessage(client_request) => {
-                            if self.state
-                                .should_process_client_request(&client_request)
-                                
-                            {
+                            if self.state.should_process_client_request(&client_request) {
                                 let _ = self
                                     .tx_consensus
                                     .send(ConsensusCommand::ProcessClientRequest(client_request))
@@ -133,12 +137,13 @@ impl Consensus {
                             message: Message::ClientRequestMessage(request.clone()),
                         }))
                         .await;
-
-                    let newly_added = self.view_changer.add_outstanding_request(&request);
+                    
+                    // if we are adding 
+                    let newly_added = self.view_changer.add_to_wait_set(&request);
                     if newly_added {
                         let view_changer = self.view_changer.clone();
                         tokio::spawn(async move {
-                            view_changer.wait_for_outstanding(&request.clone()).await;
+                            view_changer.wait_for(&request.clone()).await;
                         });
                     }
                 }
@@ -161,7 +166,8 @@ impl Consensus {
 
                 ConsensusCommand::InitPrePrepare(request) => {
                     // Here we are primary and received a client request which we deemed valid
-                    // so we broadcast a Pre_prepare Message to the network
+                    // so we broadcast a Pre_prepare Message to the network and assign
+                    // the next sequence number to this request
                     self.state.seq_num += 1;
 
                     let pre_prepare = PrePrepare {
@@ -207,7 +213,8 @@ impl Consensus {
                         }))
                         .await;
 
-                    self.state.message_bank
+                    self.state
+                        .message_bank
                         .log
                         .push_back(Message::PrePrepareMessage(pre_prepare.clone()));
                     self.state.message_bank.log.push_back(prepare_message);
@@ -217,7 +224,10 @@ impl Consensus {
                     for e_prepare in self.state.message_bank.outstanding_prepares.iter() {
                         if e_prepare.corresponds_to(&pre_prepare) {
                             println!("Found outstanding prepare from {}", e_prepare.id);
-                            let _ = self.tx_consensus.send(ConsensusCommand::AcceptPrepare(e_prepare.clone())).await;
+                            let _ = self
+                                .tx_consensus
+                                .send(ConsensusCommand::AcceptPrepare(e_prepare.clone()))
+                                .await;
                         }
                     }
 
@@ -226,12 +236,12 @@ impl Consensus {
                     // as this is evidence that the system has stopped making progress
                     let newly_added = self
                         .view_changer
-                        .add_outstanding_request(&pre_prepare.client_request);
+                        .add_to_wait_set(&pre_prepare.client_request);
                     if newly_added {
                         let view_changer = self.view_changer.clone();
                         tokio::spawn(async move {
                             view_changer
-                                .wait_for_outstanding(&pre_prepare.client_request)
+                                .wait_for(&pre_prepare.client_request)
                                 .await;
                         });
                     }
@@ -243,17 +253,24 @@ impl Consensus {
                     // Then we move to the commit phases
 
                     println!("Accepted Prepare from {}", prepare.id);
-                    
+
                     // we are not accepting this prepare, so if it is our outstandin set, then
                     //we may remove it
-                    self.state.message_bank.outstanding_prepares.remove(&prepare);
-                    
-                    self.state.message_bank
+                    self.state
+                        .message_bank
+                        .outstanding_prepares
+                        .remove(&prepare);
+
+                    self.state
+                        .message_bank
                         .log
                         .push_back(Message::PrepareMessage(prepare.clone()));
 
-                    if let Some(curr_vote_set) =
-                        self.state.message_bank.prepare_votes.get_mut(&(prepare.view, prepare.seq_num))
+                    if let Some(curr_vote_set) = self
+                        .state
+                        .message_bank
+                        .prepare_votes
+                        .get_mut(&(prepare.view, prepare.seq_num))
                     {
                         curr_vote_set.insert(prepare.id);
                         if curr_vote_set.len() > 2 * self.config.num_faulty {
@@ -268,7 +285,9 @@ impl Consensus {
                         // first time we got a prepare message for this view and sequence number
                         let mut new_vote_set = HashSet::new();
                         new_vote_set.insert(prepare.id);
-                        self.state.message_bank.prepare_votes
+                        self.state
+                            .message_bank
+                            .prepare_votes
                             .insert((prepare.view, prepare.seq_num), new_vote_set);
                     }
 
@@ -277,11 +296,13 @@ impl Consensus {
                     for e_commit in self.state.message_bank.outstanding_commits.iter() {
                         if e_commit.corresponds_to(&prepare) {
                             println!("Found outstanding commit from {}", e_commit.id);
-                            let _ = self.tx_consensus.send(ConsensusCommand::AcceptCommit(e_commit.clone())).await;
+                            let _ = self
+                                .tx_consensus
+                                .send(ConsensusCommand::AcceptCommit(e_commit.clone()))
+                                .await;
                         }
                     }
                 }
-
 
                 ConsensusCommand::AcceptCommit(commit) => {
                     // We received a Commit Message for a request that we deemed valid
@@ -291,12 +312,16 @@ impl Consensus {
 
                     self.state.message_bank.outstanding_commits.remove(&commit);
 
-                    self.state.message_bank
+                    self.state
+                        .message_bank
                         .log
                         .push_back(Message::CommitMessage(commit.clone()));
 
-                    if let Some(curr_vote_set) =
-                        self.state.message_bank.commit_votes.get_mut(&(commit.view, commit.seq_num))
+                    if let Some(curr_vote_set) = self
+                        .state
+                        .message_bank
+                        .commit_votes
+                        .get_mut(&(commit.view, commit.seq_num))
                     {
                         curr_vote_set.insert(commit.id);
                         if curr_vote_set.len() > 2 * self.config.num_faulty {
@@ -310,7 +335,9 @@ impl Consensus {
                         // first time we got a prepare message for this view and sequence number
                         let mut new_vote_set = HashSet::new();
                         new_vote_set.insert(commit.id);
-                        self.state.message_bank.commit_votes
+                        self.state
+                            .message_bank
+                            .commit_votes
                             .insert((commit.view, commit.seq_num), new_vote_set);
                     }
                 }
@@ -346,14 +373,16 @@ impl Consensus {
                     // we now have permission to apply the client request
 
                     //remove the request from the outstanding requests so that we can trigger the view change
-                    let client_request = self.state.message_bank
+                    let client_request = self
+                        .state
+                        .message_bank
                         .seen_requests
                         .get(&(commit.view, commit.seq_num))
-                        .unwrap().clone();
+                        .unwrap()
+                        .clone();
                     self.view_changer
-                        .remove_outstanding_request(&client_request);
+                        .remove_from_wait_set(&client_request);
 
-                    
                     println!("Applying client request with seq_num {}", commit.seq_num);
                     self.state.apply_commit(&client_request, &commit);
                 }

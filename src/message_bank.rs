@@ -1,7 +1,7 @@
-use crate::{NodeId};
-use crate::messages::{Message, ClientRequest, Prepare, Commit};
+use crate::messages::{ClientRequest, Commit, Message, Prepare};
+use crate::NodeId;
 
-use std::collections::{VecDeque, HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 #[derive(Default)]
 pub struct MessageBank {

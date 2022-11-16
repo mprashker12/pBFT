@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::message_bank::MessageBank;
-use crate::messages::{Message, PrePrepare, Prepare, Commit, ClientRequest};
-use crate::{Key, Value, NodeId};
+use crate::messages::{ClientRequest, Commit, Message, PrePrepare, Prepare};
+use crate::{Key, NodeId, Value};
 use std::collections::{HashMap, VecDeque};
 
 #[derive(Default)]
@@ -37,7 +37,11 @@ impl State {
 
         // make sure we already saw a request with given view and sequence number,
         // and make sure that the digests are correct.
-        if let Some(e_request) = self.message_bank.seen_requests.get(&(message.view, message.seq_num)) {
+        if let Some(e_request) = self
+            .message_bank
+            .seen_requests
+            .get(&(message.view, message.seq_num))
+        {
             if message.digest != *e_request.hash() {
                 return false;
             }
@@ -45,7 +49,7 @@ impl State {
             // we have not seen a pre_prepare message for any request
             // with this given (view, seq_num) pair, so we cannot accept a prepare
             // for this request
-            
+
             return false;
         }
         true
@@ -65,17 +69,14 @@ impl State {
     }
 
     pub fn apply_commit(&mut self, request: &ClientRequest, commit: &Commit) {
-
         // todo - get the request from the commit view and seq num
-        
+
         if request.value.is_some() {
             // request is a set request
-            self.store.insert(
-                request.clone().key,
-                request.clone().value.unwrap(),
-            );
+            self.store
+                .insert(request.clone().key, request.clone().value.unwrap());
         } else {
-        
+
             //request is a get request
         }
 
