@@ -36,6 +36,8 @@ async fn main() -> Result<()> {
         num_nodes: 3,
         num_faulty: 1,
         peer_addrs,
+        request_timeout: std::time::Duration::from_secs(5),
+        checkpoint_frequency: 10,
     };
 
     let (tx_consensus, rx_consensus) = channel::<ConsensusCommand>(32);

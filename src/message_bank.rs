@@ -7,9 +7,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 pub struct MessageBank {
     /// The log of accepted messages
     pub log: VecDeque<Message>,
-    pub seen_requests: HashMap<(usize, usize), ClientRequest>,
+    pub accepted_prepare_requests: HashMap<(usize, usize), ClientRequest>,
+    /// Valid prepares that we received that we did not accept
     pub outstanding_prepares: HashSet<Prepare>,
+    /// Valid commits that we received that we did not accept
     pub outstanding_commits: HashSet<Commit>,
-    pub prepare_votes: HashMap<(usize, usize), HashSet<NodeId>>,
-    pub commit_votes: HashMap<(usize, usize), HashSet<NodeId>>,
 }

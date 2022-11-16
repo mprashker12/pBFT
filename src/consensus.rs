@@ -110,12 +110,26 @@ impl Consensus {
                         }
                         Message::ClientRequestMessage(client_request) => {
                             if self.state.should_process_client_request(&client_request) {
-                                let _ = self
-                                    .tx_consensus
-                                    .send(ConsensusCommand::ProcessClientRequest(client_request))
-                                    .await;
+                                if self.id != self.state.current_leader() {
+                                    let _ = self
+                                        .tx_consensus
+                                        .send(ConsensusCommand::MisdirectedClientRequest(
+                                            client_request.clone(),
+                                        ))
+                                        .await;
+                                } else {
+                                    // at this point we are the leader and we have accepted a client request
+                                    // which we may begin to process
+                                    let _ = self
+                                        .tx_consensus
+                                        .send(ConsensusCommand::InitPrePrepare(
+                                            client_request.clone(),
+                                        ))
+                                        .await;
+                                }
                             }
                         }
+
                         Message::ClientResponseMessage(_) => {
                             // we should never receive a client response message
                         }
@@ -137,30 +151,14 @@ impl Consensus {
                             message: Message::ClientRequestMessage(request.clone()),
                         }))
                         .await;
-                    
-                    // if we are adding 
+
+                    // if we are adding
                     let newly_added = self.view_changer.add_to_wait_set(&request);
                     if newly_added {
                         let view_changer = self.view_changer.clone();
                         tokio::spawn(async move {
                             view_changer.wait_for(&request.clone()).await;
                         });
-                    }
-                }
-
-                ConsensusCommand::ProcessClientRequest(request) => {
-                    if self.id != self.state.current_leader() {
-                        let _ = self
-                            .tx_consensus
-                            .send(ConsensusCommand::MisdirectedClientRequest(request.clone()))
-                            .await;
-                    } else {
-                        // at this point we are the leader and we have accepted a client request
-                        // which we may begin to process
-                        let _ = self
-                            .tx_consensus
-                            .send(ConsensusCommand::InitPrePrepare(request.clone()))
-                            .await;
                     }
                 }
 
@@ -192,7 +190,7 @@ impl Consensus {
                     // We received a PrePrepare message from the network, and we see no violations
                     // So we will broadcast a corresponding prepare message and begin to count votes
 
-                    self.state.message_bank.seen_requests.insert(
+                    self.state.message_bank.accepted_prepare_requests.insert(
                         (pre_prepare.view, pre_prepare.seq_num),
                         pre_prepare.client_request.clone(),
                     );
@@ -217,7 +215,6 @@ impl Consensus {
                         .message_bank
                         .log
                         .push_back(Message::PrePrepareMessage(pre_prepare.clone()));
-                    self.state.message_bank.log.push_back(prepare_message);
 
                     // we may already have a got a prepare message which we did not accept because
                     // we did not receive this pre-prepare message message yet
@@ -228,6 +225,8 @@ impl Consensus {
                                 .tx_consensus
                                 .send(ConsensusCommand::AcceptPrepare(e_prepare.clone()))
                                 .await;
+                        } else {
+                            println!("{:?}, {:?}", e_prepare, pre_prepare);
                         }
                     }
 
@@ -240,35 +239,35 @@ impl Consensus {
                     if newly_added {
                         let view_changer = self.view_changer.clone();
                         tokio::spawn(async move {
-                            view_changer
-                                .wait_for(&pre_prepare.client_request)
-                                .await;
+                            view_changer.wait_for(&pre_prepare.client_request).await;
                         });
                     }
                 }
 
                 ConsensusCommand::AcceptPrepare(prepare) => {
                     // We saw a prepare message from the network that we deemed was valid
-                    // So we increment the vote count, and if we have enough prepare votes
-                    // Then we move to the commit phases
+                    // to we increment the vote count, and if we have enough prepare votes
+                    // then we move to the commit phases
 
                     println!("Accepted Prepare from {}", prepare.id);
 
-                    // we are not accepting this prepare, so if it is our outstandin set, then
+                    // we are not accepting this prepare, so if it is our outstanding set, then
                     //we may remove it
                     self.state
                         .message_bank
                         .outstanding_prepares
                         .remove(&prepare);
 
+                    // add the prepare message we are accepting to the log
                     self.state
                         .message_bank
                         .log
                         .push_back(Message::PrepareMessage(prepare.clone()));
 
+                    // TODO: Move the prepare votes into the state struct
+                    // Count votes for this prepare message and see if we have enough to move to the commit phases
                     if let Some(curr_vote_set) = self
                         .state
-                        .message_bank
                         .prepare_votes
                         .get_mut(&(prepare.view, prepare.seq_num))
                     {
@@ -286,7 +285,6 @@ impl Consensus {
                         let mut new_vote_set = HashSet::new();
                         new_vote_set.insert(prepare.id);
                         self.state
-                            .message_bank
                             .prepare_votes
                             .insert((prepare.view, prepare.seq_num), new_vote_set);
                     }
@@ -319,7 +317,6 @@ impl Consensus {
 
                     if let Some(curr_vote_set) = self
                         .state
-                        .message_bank
                         .commit_votes
                         .get_mut(&(commit.view, commit.seq_num))
                     {
@@ -336,7 +333,6 @@ impl Consensus {
                         let mut new_vote_set = HashSet::new();
                         new_vote_set.insert(commit.id);
                         self.state
-                            .message_bank
                             .commit_votes
                             .insert((commit.view, commit.seq_num), new_vote_set);
                     }
@@ -372,19 +368,22 @@ impl Consensus {
                 ConsensusCommand::ApplyClientRequest(commit) => {
                     // we now have permission to apply the client request
 
-                    //remove the request from the outstanding requests so that we can trigger the view change
                     let client_request = self
                         .state
                         .message_bank
-                        .seen_requests
+                        .accepted_prepare_requests
                         .get(&(commit.view, commit.seq_num))
                         .unwrap()
                         .clone();
-                    self.view_changer
-                        .remove_from_wait_set(&client_request);
+
+                    // remove this request from the view changer so that we don't trigger a view change
+                    self.view_changer.remove_from_wait_set(&client_request);
 
                     println!("Applying client request with seq_num {}", commit.seq_num);
                     self.state.apply_commit(&client_request, &commit);
+                    if self.state.last_seq_num_committed % self.config.checkpoint_frequency == 0 {
+                        //trigger the checkpoint process
+                    }
                 }
             }
         }

@@ -1,4 +1,4 @@
-use crate::config::{ Config};
+use crate::config::Config;
 use crate::messages::{ClientRequest, ConsensusCommand};
 use crate::NodeId;
 
@@ -39,7 +39,7 @@ impl ViewChanger {
     }
 
     pub async fn wait_for(&self, request: &ClientRequest) {
-        sleep(std::time::Duration::from_secs(5)).await;
+        sleep(self.config.request_timeout).await;
         if self.is_in_wait_set(&request.clone()) {
             let _ = self
                 .tx_consensus

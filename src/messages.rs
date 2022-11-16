@@ -21,7 +21,6 @@ pub enum Message {
 pub enum ConsensusCommand {
     ProcessMessage(Message),
     MisdirectedClientRequest(ClientRequest),
-    ProcessClientRequest(ClientRequest),
     InitPrePrepare(ClientRequest),
     AcceptPrePrepare(PrePrepare),
     AcceptPrepare(Prepare),
@@ -66,9 +65,6 @@ pub struct Prepare {
 impl Prepare {
     // does this prepare message correspond to the pre_prepare message
     pub fn corresponds_to(&self, pre_prepare: &PrePrepare) -> bool {
-        if self.id != pre_prepare.id {
-            return false;
-        }
         if self.view != pre_prepare.view {
             return false;
         }
@@ -76,9 +72,6 @@ impl Prepare {
             return false;
         }
         if self.digest != pre_prepare.digest {
-            return false;
-        }
-        if self.signature != pre_prepare.signature {
             return false;
         }
         true
@@ -98,9 +91,6 @@ pub struct Commit {
 impl Commit {
     // does this commit message correspond to the prepare message
     pub fn corresponds_to(&self, prepare: &Prepare) -> bool {
-        if self.id != prepare.id {
-            return false;
-        }
         if self.view != prepare.view {
             return false;
         }
@@ -108,9 +98,6 @@ impl Commit {
             return false;
         }
         if self.digest != prepare.digest {
-            return false;
-        }
-        if self.signature != prepare.signature {
             return false;
         }
         true
@@ -140,6 +127,15 @@ pub struct ClientResponse {
     pub key: Key,
     pub value: Value,
     pub success: bool,
+    pub signature: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct CheckPoint {
+    pub id: NodeId,
+    pub committed_seq_num: usize,
+    pub state_digest: Vec<u8>,
+    pub signature: usize,
 }
 
 impl ClientRequest {

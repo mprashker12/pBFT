@@ -13,4 +13,8 @@ pub struct Config {
     pub num_faulty: usize,
     /// Address which each node is listening on
     pub peer_addrs: HashMap<NodeId, SocketAddr>,
+
+    pub request_timeout: std::time::Duration,
+
+    pub checkpoint_frequency: usize,
 }

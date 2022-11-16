@@ -2,7 +2,7 @@ use crate::config::Config;
 use crate::message_bank::MessageBank;
 use crate::messages::{ClientRequest, Commit, Message, PrePrepare, Prepare};
 use crate::{Key, NodeId, Value};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 #[derive(Default)]
 pub struct State {
@@ -11,6 +11,13 @@ pub struct State {
     pub view: usize,
     pub seq_num: usize,
     pub last_seq_num_committed: usize,
+    /// Maps (view, seq_num) to Ids of nodes who we
+    /// have accepted prepare messages from for the associated transaction
+    pub prepare_votes: HashMap<(usize, usize), HashSet<NodeId>>,
+    /// Maps (view, seq_num) to Ids of nodes who we
+    /// have accepted prepare messages from for the associated transaction
+    pub commit_votes: HashMap<(usize, usize), HashSet<NodeId>>,
+    /// Structure storing all messages, including log
     pub message_bank: MessageBank,
     pub store: HashMap<Key, Value>,
 }
@@ -20,18 +27,32 @@ impl State {
         self.view % self.config.num_nodes
     }
 
-    pub fn should_accept_pre_prepare(&self, message: &PrePrepare) -> bool {
-        if self.view != message.view {
+    pub fn should_accept_pre_prepare(&self, pre_prepare: &PrePrepare) -> bool {
+        if self.in_view_change {
             return false;
         }
-        // verify that the digest of the message is equal to the hash of the client_request
-        // check if we have already seen a sequence number for this view
-        // have we accepted a pre-prepare message in this view with same sequence number and different digest
+        if self.view != pre_prepare.view {
+            return false;
+        }
+        if pre_prepare.digest != pre_prepare.client_request.hash() {
+            return false;
+        }
+        if self
+            .message_bank
+            .accepted_prepare_requests
+            .contains_key(&(pre_prepare.view, pre_prepare.seq_num))
+        {
+            return false;
+        }
+
         true
     }
 
-    pub fn should_accept_prepare(&self, message: &Prepare) -> bool {
-        if self.view != message.view {
+    pub fn should_accept_prepare(&self, prepare: &Prepare) -> bool {
+        if self.in_view_change {
+            return false;
+        }
+        if self.view != prepare.view {
             return false;
         }
 
@@ -39,10 +60,10 @@ impl State {
         // and make sure that the digests are correct.
         if let Some(e_request) = self
             .message_bank
-            .seen_requests
-            .get(&(message.view, message.seq_num))
+            .accepted_prepare_requests
+            .get(&(prepare.view, prepare.seq_num))
         {
-            if message.digest != *e_request.hash() {
+            if prepare.digest != *e_request.hash() {
                 return false;
             }
         } else {
@@ -60,9 +81,8 @@ impl State {
     }
 
     pub fn should_process_client_request(&self, request: &ClientRequest) -> bool {
+        // this will only be called by the master replica
         if self.in_view_change {
-            // if we are in the view change state
-            // then we do not process any client requests
             return false;
         }
         true
@@ -81,5 +101,12 @@ impl State {
         }
 
         self.last_seq_num_committed = commit.seq_num;
+    }
+
+    pub fn digest(&self) -> Vec<u8> {
+        serde_json::to_string(&self.message_bank.log)
+            .unwrap()
+            .as_bytes()
+            .into()
     }
 }
