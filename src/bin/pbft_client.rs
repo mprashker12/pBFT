@@ -9,7 +9,7 @@ use serde_json;
 async fn main() -> std::io::Result<()> {
     let me_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8079);
     let listener = TcpListener::bind(me_addr.clone()).await.unwrap();
-    let mut node_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8061);
+    let mut node_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8060);
 
     let mut node_stream = TcpStream::connect(node_addr).await.unwrap();
     let message: Message = Message::ClientRequestMessage(ClientRequest {

@@ -4,6 +4,9 @@ use pbft::messages::{ConsensusCommand, NodeCommand};
 use pbft::node::Node;
 use pbft::Result;
 
+use rand::rngs::OsRng;
+use ed25519_dalek::{Keypair, PublicKey, SecretKey};
+
 use tokio::sync::mpsc::channel;
 
 use std::{
@@ -36,16 +39,24 @@ async fn main() -> Result<()> {
         num_nodes: 3,
         num_faulty: 1,
         peer_addrs,
-        request_timeout: std::time::Duration::from_secs(5),
+        request_timeout: std::time::Duration::from_secs(15),
         checkpoint_frequency: 10,
     };
 
     let (tx_consensus, rx_consensus) = channel::<ConsensusCommand>(32);
     let (tx_node, rx_node) = channel::<NodeCommand>(32);
 
+    // generate a keypair for the node
+    let mut rng = OsRng{};
+    let keypair: Keypair = Keypair::generate(&mut rng);
+    let keypair_bytes = keypair.to_bytes().to_vec();
+
     let mut node = Node::new(
         id,
         config.clone(),
+        keypair_bytes.clone(),
+        keypair.public,
+        keypair.secret,
         rx_node,
         tx_consensus.clone(),
         tx_node.clone(),
@@ -57,6 +68,7 @@ async fn main() -> Result<()> {
     let mut consensus = Consensus::new(
         id,
         config.clone(),
+        keypair_bytes.clone(),
         rx_consensus,
         tx_consensus.clone(),
         tx_node.clone(),

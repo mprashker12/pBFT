@@ -20,6 +20,8 @@ pub struct Consensus {
     pub id: NodeId,
     /// Configuration of the cluster this node is in
     pub config: Config,
+    /// keypair of the node
+    pub keypair_bytes: Vec<u8>,
     /// Receiver of Consensus Commands
     pub rx_consensus: Receiver<ConsensusCommand>,
     /// Sends Commands to Node
@@ -36,6 +38,7 @@ impl Consensus {
     pub fn new(
         id: NodeId,
         config: Config,
+        keypair_bytes: Vec<u8>,
         rx_consensus: Receiver<ConsensusCommand>,
         tx_consensus: Sender<ConsensusCommand>,
         tx_node: Sender<NodeCommand>,
@@ -55,6 +58,7 @@ impl Consensus {
         Self {
             id,
             config,
+            keypair_bytes,
             rx_consensus,
             tx_node,
             tx_consensus,
@@ -110,6 +114,10 @@ impl Consensus {
                                     .insert(commit.clone());
                             }
                         }
+
+                        Message::ViewChangeMessage(view_change) => {}
+                        Message::CheckPointMessage(commit) => {}
+
                         Message::ClientRequestMessage(client_request) => {
                             if self.state.should_process_client_request(&client_request) {
                                 if self.id != self.state.current_leader() {
@@ -171,14 +179,14 @@ impl Consensus {
                     // the next sequence number to this request
                     self.state.seq_num += 1;
 
-                    let pre_prepare = PrePrepare {
-                        id: self.id,
-                        view: self.state.view,
-                        seq_num: self.state.seq_num,
-                        digest: request.clone().hash(),
-                        signature: 0,
-                        client_request: request,
-                    };
+                    let pre_prepare = PrePrepare::new_with_signature(
+                        self.keypair_bytes.clone(),
+                        self.id,
+                        self.state.view,
+                        self.state.seq_num,
+                        &request,
+                    );
+                    
                     let pre_prepare_message = Message::PrePrepareMessage(pre_prepare.clone());
 
                     let _ = self
@@ -192,19 +200,19 @@ impl Consensus {
                 ConsensusCommand::AcceptPrePrepare(pre_prepare) => {
                     // We received a PrePrepare message from the network, and we see no violations
                     // So we will broadcast a corresponding prepare message and begin to count votes
-
-                    self.state.message_bank.accepted_prepare_requests.insert(
+                    println!("Accepted PrePrepare from {}", pre_prepare.id);
+                    self.state.message_bank.accepted_pre_prepare_requests.insert(
                         (pre_prepare.view, pre_prepare.seq_num),
-                        pre_prepare.client_request.clone(),
+                        pre_prepare.clone(),
                     );
 
-                    let prepare = Prepare {
-                        id: self.id,
-                        view: self.state.view,
-                        seq_num: pre_prepare.seq_num,
-                        digest: pre_prepare.clone().digest,
-                        signature: 0,
-                    };
+                    let prepare = Prepare::new_with_signature(
+                        self.keypair_bytes.clone(),
+                        self.id, 
+                        pre_prepare.view,
+                        pre_prepare.seq_num,
+                        &pre_prepare.clone().client_request
+                    );
 
                     let prepare_message = Message::PrepareMessage(prepare.clone());
                     let _ = self
@@ -303,6 +311,27 @@ impl Consensus {
                     }
                 }
 
+                ConsensusCommand::EnterCommit(prepare) => {
+                    println!("BEGINNING COMMIT PHASE");
+
+                    //todo make a new commit message builder
+
+                    let commit = Commit {
+                        id: self.id,
+                        view: self.state.view,
+                        seq_num: prepare.seq_num,
+                        client_request_digest: prepare.client_request_digest,
+                        signature: Vec::default(),
+                    };
+                    let commit_message = Message::CommitMessage(commit);
+                    let _ = self
+                        .tx_node
+                        .send(NodeCommand::BroadCastMessageCommand(BroadCastMessage {
+                            message: commit_message,
+                        }))
+                        .await;
+                }
+
                 ConsensusCommand::AcceptCommit(commit) => {
                     // We received a Commit Message for a request that we deemed valid
                     // so we increment the vote count
@@ -339,24 +368,6 @@ impl Consensus {
                     }
                 }
 
-                ConsensusCommand::EnterCommit(prepare) => {
-                    println!("BEGINNING COMMIT PHASE");
-                    let commit = Commit {
-                        id: self.id,
-                        view: self.state.view,
-                        seq_num: prepare.seq_num,
-                        digest: prepare.digest,
-                        signature: 0,
-                    };
-                    let commit_message = Message::CommitMessage(commit);
-                    let _ = self
-                        .tx_node
-                        .send(NodeCommand::BroadCastMessageCommand(BroadCastMessage {
-                            message: commit_message,
-                        }))
-                        .await;
-                }
-
                 ConsensusCommand::InitViewChange(request) => {
                     if self.state.in_view_change || self.state.current_leader() == self.id {
                         // we are already in a view change state or we are currently the leader
@@ -372,10 +383,11 @@ impl Consensus {
                     let client_request = self
                         .state
                         .message_bank
-                        .accepted_prepare_requests
+                        .accepted_pre_prepare_requests
                         .get(&(commit.view, commit.seq_num))
                         .unwrap()
-                        .clone();
+                        .clone()
+                        .client_request;
 
                     // remove this request from the view changer so that we don't trigger a view change
                     self.view_changer.remove_from_wait_set(&client_request);

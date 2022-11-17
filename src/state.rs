@@ -36,12 +36,12 @@ impl State {
         if self.view != pre_prepare.view {
             return false;
         }
-        if pre_prepare.digest != pre_prepare.client_request.hash() {
+        if pre_prepare.client_request_digest != pre_prepare.client_request.digest() {
             return false;
         }
         if self
             .message_bank
-            .accepted_prepare_requests
+            .accepted_pre_prepare_requests
             .contains_key(&(pre_prepare.view, pre_prepare.seq_num))
         {
             return false;
@@ -62,10 +62,10 @@ impl State {
         // and make sure that the digests are correct.
         if let Some(e_request) = self
             .message_bank
-            .accepted_prepare_requests
+            .accepted_pre_prepare_requests
             .get(&(prepare.view, prepare.seq_num))
         {
-            if prepare.digest != *e_request.hash() {
+            if prepare.client_request_digest != *e_request.client_request.digest() {
                 return false;
             }
         } else {

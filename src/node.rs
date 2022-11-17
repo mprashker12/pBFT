@@ -13,7 +13,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::{sleep, Duration, Instant};
 use tokio::{io::AsyncBufReadExt, sync::Mutex};
 
-use rand::rngs::OsRng;
+
 use ed25519_dalek::{Keypair, PublicKey, SecretKey};
 
 
@@ -40,6 +40,8 @@ pub struct InnerNode {
     /// Config of the cluster of the outer node
     pub config: Config,
 
+    pub keypair_bytes: Vec<u8>,
+
     pub pub_key: PublicKey,
 
     pub secret_key: Arc<SecretKey>,
@@ -55,20 +57,22 @@ impl Node {
     pub fn new(
         id: NodeId,
         config: Config,
+        keypair_bytes: Vec<u8>,
+        pub_key: PublicKey,
+        secret_key: SecretKey,
         rx_node: Receiver<NodeCommand>,
         tx_consensus: Sender<ConsensusCommand>,
         tx_node: Sender<NodeCommand>,
     ) -> Self {
         let addr_me = *config.peer_addrs.get(&id).unwrap();
 
-        let mut rng = OsRng{};
-        let keypair: Keypair = Keypair::generate(&mut rng);
 
         let inner = InnerNode {
             id,
             config: config.clone(),
-            pub_key: keypair.public,
-            secret_key: Arc::new(keypair.secret),
+            keypair_bytes,
+            pub_key,
+            secret_key: Arc::new(secret_key),
             peer_pub_keys: Arc::new(Mutex::new(HashMap::new())),
             tx_consensus,
             tx_node,
@@ -97,7 +101,7 @@ impl Node {
                         pub_key_vec: inner.pub_key.as_bytes().to_vec()
                     }
                 )).await;
-                sleep(std::time::Duration::from_secs(10)).await;
+                sleep(std::time::Duration::from_secs(1)).await;
             }
         });
 
@@ -148,7 +152,7 @@ impl InnerNode {
             let mut peer_pub_keys = self.peer_pub_keys.lock().await;
             let peer_id = identifier.id;
             let peer_pub_key = PublicKey::from_bytes(identifier.pub_key_vec.as_slice()).unwrap();
-            println!("Received identifier {:?} : {:?}", peer_id, peer_pub_key);
+            //println!("Received identifier {:?}", peer_id);
             peer_pub_keys.insert(peer_id, peer_pub_key);
             return Ok(());
         }
