@@ -5,15 +5,54 @@ use serde::{Deserialize, Serialize};
 use crate::{Key, NodeId, Value};
 
 use sha2::{Digest, Sha256};
+use ed25519_dalek::{Keypair, PublicKey, SecretKey};
 
 /// Messages which are communicated between nodes in the network
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Message {
+    IdentifierMessage(Identifier),
     PrePrepareMessage(PrePrepare),
     PrepareMessage(Prepare),
     CommitMessage(Commit),
     ClientRequestMessage(ClientRequest),
     ClientResponseMessage(ClientResponse),
+}
+
+impl Message {
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut serialized_message = serde_json::to_string(self).unwrap();
+        serialized_message.push('\n');
+        serialized_message.into_bytes()
+    }
+
+    pub fn get_id(&self) -> Option<NodeId> {
+        match self.clone() {
+            Message::IdentifierMessage(identifier) => {Some(identifier.id)}
+            Message::PrePrepareMessage(pre_prepare) => {Some(pre_prepare.id)}
+            Message::PrepareMessage(prepare) => {Some(prepare.id)}
+            Message::CommitMessage(commit) => {Some(commit.id)}
+            Message::ClientRequestMessage(_) => {None}
+            Message::ClientResponseMessage(client_response) => {Some(client_response.id)}
+        }
+    }
+
+    pub fn get_signature(&self) -> Option<usize> {
+        match self.clone() {
+            Message::IdentifierMessage(_) => {None}
+            Message::PrePrepareMessage(pre_prepare) => {Some(pre_prepare.signature)}
+            Message::PrepareMessage(prepare) => {Some(prepare.signature)}
+            Message::CommitMessage(commit) => {Some(commit.signature)}
+            Message::ClientRequestMessage(_) => {None}
+            Message::ClientResponseMessage(client_response) => {Some(client_response.signature)}
+        }
+    }
+
+    pub fn is_properly_signed_by(&self, pub_key: &PublicKey) -> bool {
+        if self.get_signature().is_none() {return true;}
+        let signature = self.get_signature().unwrap();
+
+        true
+    }
 }
 
 /// Commands to Consensus Engine
@@ -38,6 +77,12 @@ pub enum NodeCommand {
 }
 
 // Messages
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Identifier {
+    pub id: NodeId,
+    pub pub_key_vec: Vec<u8>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PrePrepare {
@@ -110,14 +155,7 @@ pub struct ViewChange {
     pub new_view: usize,
     pub seq_num: usize,
     pub checkpoint_messages: Vec<Prepare>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct ClientRequest {
-    pub respond_addr: SocketAddr,
-    pub time_stamp: usize,
-    pub key: Key,
-    pub value: Option<Value>,
+    pub signature: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -138,6 +176,14 @@ pub struct CheckPoint {
     pub signature: usize,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct ClientRequest {
+    pub respond_addr: SocketAddr,
+    pub time_stamp: usize,
+    pub key: Key,
+    pub value: Option<Value>,
+}
+
 impl ClientRequest {
     pub fn hash(&self) -> Vec<u8> {
         let mut hasher = Sha256::new();
@@ -149,14 +195,6 @@ impl ClientRequest {
         }
         let result: &[u8] = &hasher.finalize();
         result.to_vec()
-    }
-}
-
-impl Message {
-    pub fn serialize(&self) -> Vec<u8> {
-        let mut serialized_message = serde_json::to_string(self).unwrap();
-        serialized_message.push('\n');
-        serialized_message.into_bytes()
     }
 }
 

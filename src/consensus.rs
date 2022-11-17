@@ -71,6 +71,8 @@ impl Consensus {
             match cmd {
                 ConsensusCommand::ProcessMessage(message) => {
                     match message.clone() {
+                        Message::IdentifierMessage(_) => {unreachable!()}
+                        
                         Message::PrePrepareMessage(pre_prepare) => {
                             println!("Saw preprepare from {}", pre_prepare.id);
                             if self.state.should_accept_pre_prepare(&pre_prepare) {
@@ -132,6 +134,7 @@ impl Consensus {
 
                         Message::ClientResponseMessage(_) => {
                             // we should never receive a client response message
+                            unreachable!()
                         }
                     }
                 }
