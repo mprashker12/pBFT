@@ -13,11 +13,18 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::{sleep, Duration, Instant};
 use tokio::{io::AsyncBufReadExt, sync::Mutex};
 
+use rand::rngs::OsRng;
+use ed25519_dalek::Keypair;
+
+
+
 // TODO: We may use a mpsc channel for the inner node to communicate with its parent node
 
 pub struct Node {
     /// Id of this node
     pub id: NodeId,
+    /// (public, private) keypair for this node
+    pub keypair: Keypair,
     /// Configuration of Cluster this node is in
     pub config: Config,
     /// Socket on which this node is listening for connections from peers
@@ -50,6 +57,10 @@ impl Node {
     ) -> Self {
         let addr_me = *config.peer_addrs.get(&id).unwrap();
 
+        let mut rng = OsRng{};
+        let keypair: Keypair = Keypair::generate(&mut rng);
+        
+
         // todo: we may also have a mpsc channel for consensus to communicate with the node
 
         let inner = InnerNode {
@@ -61,6 +72,7 @@ impl Node {
 
         Self {
             id,
+            keypair,
             config,
             addr: addr_me,
             inner,
@@ -70,7 +82,7 @@ impl Node {
 
     pub async fn spawn(&mut self) {
         let listener = TcpListener::bind(self.addr).await.unwrap();
-        println!("Node {} listening on {}", self.id, self.addr);
+        println!("Node {} listening on {} with public key {:?}", self.id, self.addr, self.keypair.public);
 
         loop {
             tokio::select! {
