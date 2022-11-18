@@ -1,11 +1,13 @@
 use crate::config::Config;
 use crate::consensus::Consensus;
-use crate::messages::{ClientRequest, ConsensusCommand, Message, NodeCommand, PrePrepare, Prepare, Identifier};
+use crate::messages::{
+    ClientRequest, ConsensusCommand, Identifier, Message, NodeCommand, PrePrepare, Prepare,
+};
 use crate::{NodeId, Result};
 
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::{Arc};
+use std::sync::Arc;
 
 use tokio::io::{AsyncWriteExt, BufStream};
 use tokio::net::{TcpListener, TcpStream};
@@ -13,10 +15,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::{sleep, Duration, Instant};
 use tokio::{io::AsyncBufReadExt, sync::Mutex};
 
-
 use ed25519_dalek::{Keypair, PublicKey, SecretKey};
-
-
 
 // TODO: We may use a mpsc channel for the inner node to communicate with its parent node
 
@@ -66,7 +65,6 @@ impl Node {
     ) -> Self {
         let addr_me = *config.peer_addrs.get(&id).unwrap();
 
-
         let inner = InnerNode {
             id,
             config: config.clone(),
@@ -90,17 +88,17 @@ impl Node {
     pub async fn spawn(&mut self) {
         let listener = TcpListener::bind(self.addr).await.unwrap();
         println!("Node {} listening on {}", self.id, self.addr);
-        
+
         // We periodically broadcast our identity to all of the other nodes in the network
         let inner = self.inner.clone();
         tokio::spawn(async move {
             loop {
-                inner.broadcast(&Message::IdentifierMessage(
-                    Identifier {
+                inner
+                    .broadcast(&Message::IdentifierMessage(Identifier {
                         id: inner.id,
-                        pub_key_vec: inner.pub_key.as_bytes().to_vec()
-                    }
-                )).await;
+                        pub_key_vec: inner.pub_key.as_bytes().to_vec(),
+                    }))
+                    .await;
                 sleep(std::time::Duration::from_secs(1)).await;
             }
         });
@@ -158,7 +156,7 @@ impl InnerNode {
             println!("Dropping message from {:?}", message.get_id());
             return Ok(());
         }
-       
+
         let _ = self
             .tx_consensus
             .send(ConsensusCommand::ProcessMessage(message.clone()))
@@ -189,7 +187,6 @@ impl InnerNode {
     }
 
     pub async fn should_drop(&self, message: &Message) -> bool {
-        
         if let Message::ClientRequestMessage(_) = message {
             // we consider client requests to always be properly signed
             return false;

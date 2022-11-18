@@ -1,12 +1,11 @@
 use crate::config::Config;
 use crate::message_bank::MessageBank;
-use crate::messages::{ClientRequest, Commit, Message, PrePrepare, Prepare, ClientResponse};
+use crate::messages::{ClientRequest, ClientResponse, Commit, Message, PrePrepare, Prepare};
 use crate::{Key, NodeId, Value};
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use ed25519_dalek::{Digest, Sha512};
 use sha2::Sha256;
-
 
 #[derive(Default)]
 pub struct State {
@@ -21,6 +20,9 @@ pub struct State {
     /// Maps (view, seq_num) to Ids of nodes who we
     /// have accepted prepare messages from for the associated transaction
     pub commit_votes: HashMap<(usize, usize), HashSet<NodeId>>,
+    /// Maps (seq_num, digest) pair to the Ids of the nodes
+    /// who we have received corresponding checkpoints from
+    pub checkpoint_votes: HashMap<(usize, Vec<u8>), HashSet<NodeId>>,
     /// Structure storing all messages, including log
     pub message_bank: MessageBank,
     pub store: HashMap<Key, Value>,
@@ -48,7 +50,7 @@ impl State {
         {
             // if we already saw a pre-prepare request for this (view, seq-num) pair,
             // then we will accept as along as the message digests are the same
-            return e_pre_prepare.client_request_digest == pre_prepare.client_request_digest
+            return e_pre_prepare.client_request_digest == pre_prepare.client_request_digest;
         }
 
         true
@@ -82,7 +84,13 @@ impl State {
         true
     }
 
-    pub fn should_accept_commit(&self, messsage: &Commit) -> bool {
+    pub fn should_accept_commit(&self, commit: &Commit) -> bool {
+        if self.in_view_change {
+            return false;
+        }
+        if self.view != commit.view {
+            return false;
+        }
         true
     }
 
@@ -91,13 +99,21 @@ impl State {
         if self.in_view_change {
             return false;
         }
+        // todo: look at the timestamp of the request and make sure it is at least as large as the last committed time stamp
+        // sent to that client
         true
     }
 
-    pub fn apply_commit(&mut self, request: &ClientRequest, commit: &Commit) -> (Option<Option<&Value>>, Vec<Commit>) {
+    pub fn apply_commit(
+        &mut self,
+        request: &ClientRequest,
+        commit: &Commit,
+    ) -> (Option<Option<&Value>>, Vec<Commit>) {
         // todo - get the request from the commit view and seq num
         self.last_seq_num_committed = commit.seq_num;
-        self.message_bank.accepted_commits_not_applied.remove(&commit.seq_num);
+        self.message_bank
+            .accepted_commits_not_applied
+            .remove(&(commit.seq_num));
 
         let commit_res = if request.value.is_some() {
             // request is a set request
@@ -113,14 +129,17 @@ impl State {
         // determine if there are any outstanding commits which we can now apply
         let mut new_applies = Vec::<Commit>::new();
         let mut try_commit = commit.seq_num + 1;
-       
-        while let Some(commit) = self.message_bank.accepted_commits_not_applied.get(&try_commit) {
+
+        while let Some(commit) = self
+            .message_bank
+            .accepted_commits_not_applied
+            .get(&try_commit)
+        {
             new_applies.push(commit.clone());
             try_commit += 1;
         }
-        
-        (commit_res, new_applies)
 
+        (commit_res, new_applies)
     }
 
     /// Sha256 hash of the state store

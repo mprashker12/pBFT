@@ -1,4 +1,4 @@
-use crate::messages::{ClientRequest, Commit, Message, Prepare, PrePrepare};
+use crate::messages::{ClientRequest, Commit, Message, PrePrepare, Prepare};
 use crate::NodeId;
 
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -12,6 +12,6 @@ pub struct MessageBank {
     pub outstanding_prepares: HashSet<Prepare>,
     /// Valid commits that we received that we did not accept
     pub outstanding_commits: HashSet<Commit>,
-
+    /// commits we
     pub accepted_commits_not_applied: HashMap<usize, Commit>,
 }

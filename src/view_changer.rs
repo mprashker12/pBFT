@@ -27,7 +27,6 @@ pub struct ViewChanger {
 }
 
 impl ViewChanger {
-
     pub fn add_to_sent_pre_prepares(&mut self, view_seq_num_pair: &(usize, usize)) -> bool {
         let mut sent_pre_prepares = self.sent_pre_prepares.lock().unwrap();
         sent_pre_prepares.insert(view_seq_num_pair.clone())
@@ -52,7 +51,6 @@ impl ViewChanger {
                 .await;
         }
     }
-
 
     pub fn add_to_wait_set(&mut self, request: &ClientRequest) -> bool {
         let mut outstanding_requests = self.wait_set.lock().unwrap();

@@ -4,8 +4,8 @@ use pbft::messages::{ConsensusCommand, NodeCommand};
 use pbft::node::Node;
 use pbft::Result;
 
-use rand::rngs::OsRng;
 use ed25519_dalek::{Keypair, PublicKey, SecretKey};
+use rand::rngs::OsRng;
 
 use tokio::sync::mpsc::channel;
 
@@ -47,7 +47,7 @@ async fn main() -> Result<()> {
     let (tx_node, rx_node) = channel::<NodeCommand>(32);
 
     // generate a keypair for the node
-    let mut rng = OsRng{};
+    let mut rng = OsRng {};
     let keypair: Keypair = Keypair::generate(&mut rng);
     let keypair_bytes = keypair.to_bytes().to_vec();
 

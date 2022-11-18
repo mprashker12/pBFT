@@ -29,13 +29,13 @@ impl Message {
 
     pub fn get_id(&self) -> Option<NodeId> {
         match self.clone() {
-            Message::IdentifierMessage(identifier) => {Some(identifier.id)}
-            Message::PrePrepareMessage(pre_prepare) => {Some(pre_prepare.id)}
-            Message::PrepareMessage(prepare) => {Some(prepare.id)}
-            Message::CommitMessage(commit) => {Some(commit.id)}
-            Message::ViewChangeMessage(view_change) => {Some(view_change.id)}
-            Message::CheckPointMessage(check_point) => {Some(check_point.id)}
-            Message::ClientResponseMessage(client_response) => {Some(client_response.id)}
+            Message::IdentifierMessage(identifier) => Some(identifier.id),
+            Message::PrePrepareMessage(pre_prepare) => Some(pre_prepare.id),
+            Message::PrepareMessage(prepare) => Some(prepare.id),
+            Message::CommitMessage(commit) => Some(commit.id),
+            Message::ViewChangeMessage(view_change) => Some(view_change.id),
+            Message::CheckPointMessage(check_point) => Some(check_point.id),
+            Message::ClientResponseMessage(client_response) => Some(client_response.id),
             Message::ClientRequestMessage(_) => {
                 // client request messages are not sent from nodes
                 // so they have no associated ids
@@ -47,13 +47,16 @@ impl Message {
     /// Is this message propertly signed by the given public key
     pub fn is_properly_signed_by(&self, pub_key: &PublicKey) -> bool {
         match self.clone() {
-            Message::IdentifierMessage(_) => {unreachable!()}
-            Message::PrePrepareMessage(pre_prepare) => {pre_prepare.is_properly_signed_by(pub_key)}
-            _ => {true}
+            Message::IdentifierMessage(_) => {
+                unreachable!()
+            }
+            Message::PrePrepareMessage(pre_prepare) => pre_prepare.is_properly_signed_by(pub_key),
+            Message::PrepareMessage(prepare) => prepare.is_properly_signed_by(pub_key),
+            Message::CommitMessage(commit) => commit.is_properly_signed_by(pub_key),
+            _ => true,
         }
     }
 }
-
 
 // Messages
 
@@ -72,15 +75,20 @@ pub struct PrePrepare {
     pub seq_num: usize,
     /// Hash of the associated client request
     pub client_request_digest: Vec<u8>,
-    pub signature: Vec<u8>, 
+    pub signature: Vec<u8>,
     pub client_request: ClientRequest,
 }
 
 impl PrePrepare {
-
-    pub fn new_with_signature(key_pair_bytes: Vec<u8>, id: usize, view: usize, seq_num: usize, client_request: &ClientRequest) -> PrePrepare {
+    pub fn new_with_signature(
+        key_pair_bytes: Vec<u8>,
+        id: usize,
+        view: usize,
+        seq_num: usize,
+        client_request: &ClientRequest,
+    ) -> PrePrepare {
         let key_pair = Keypair::from_bytes(key_pair_bytes.as_slice()).unwrap();
-        
+
         let mut pre_hashed = Sha512::new();
         pre_hashed.update(b"PrePrepare");
         pre_hashed.update(view.to_le_bytes());
@@ -89,18 +97,17 @@ impl PrePrepare {
 
         let signature = key_pair.sign_prehashed(pre_hashed, None).unwrap();
 
-        PrePrepare { 
-            id, 
-            view, 
-            seq_num, 
-            client_request_digest: client_request.digest(), 
+        PrePrepare {
+            id,
+            view,
+            seq_num,
+            client_request_digest: client_request.digest(),
             signature: signature.to_bytes().to_vec(),
-            client_request: client_request.clone()
+            client_request: client_request.clone(),
         }
     }
 
     pub fn is_properly_signed_by(&self, pub_key: &PublicKey) -> bool {
-        
         let mut pre_hashed = Sha512::new();
         pre_hashed.update(b"PrePrepare");
         pre_hashed.update(self.view.to_le_bytes());
@@ -109,7 +116,9 @@ impl PrePrepare {
 
         let signature = Signature::from_bytes(self.signature.as_slice()).unwrap();
 
-        pub_key.verify_prehashed(pre_hashed, None, &signature).is_ok()
+        pub_key
+            .verify_prehashed(pre_hashed, None, &signature)
+            .is_ok()
     }
 }
 
@@ -125,12 +134,16 @@ pub struct Prepare {
     pub signature: Vec<u8>,
 }
 
-
 impl Prepare {
-
-    pub fn new_with_signature(key_pair_bytes: Vec<u8>, id: usize, view: usize, seq_num: usize, client_request: &ClientRequest) -> Prepare {
+    pub fn new_with_signature(
+        key_pair_bytes: Vec<u8>,
+        id: usize,
+        view: usize,
+        seq_num: usize,
+        client_request: &ClientRequest,
+    ) -> Prepare {
         let key_pair = Keypair::from_bytes(key_pair_bytes.as_slice()).unwrap();
-        
+
         let mut pre_hashed = Sha512::new();
         pre_hashed.update(b"Prepare");
         pre_hashed.update(view.to_le_bytes());
@@ -139,16 +152,29 @@ impl Prepare {
 
         let signature = key_pair.sign_prehashed(pre_hashed, None).unwrap();
 
-        Prepare { 
-            id, 
-            view, 
-            seq_num, 
-            client_request_digest: client_request.digest(), 
+        Prepare {
+            id,
+            view,
+            seq_num,
+            client_request_digest: client_request.digest(),
             signature: signature.to_bytes().to_vec(),
         }
     }
 
-   
+    pub fn is_properly_signed_by(&self, pub_key: &PublicKey) -> bool {
+        let mut pre_hashed = Sha512::new();
+        pre_hashed.update(b"Prepare");
+        pre_hashed.update(self.view.to_le_bytes());
+        pre_hashed.update(self.seq_num.to_le_bytes());
+        pre_hashed.update(self.client_request_digest.as_slice());
+
+        let signature = Signature::from_bytes(self.signature.as_slice()).unwrap();
+
+        pub_key
+            .verify_prehashed(pre_hashed, None, &signature)
+            .is_ok()
+    }
+
     // does this prepare message correspond to the pre_prepare message
     pub fn corresponds_to(&self, pre_prepare: &PrePrepare) -> bool {
         if self.view != pre_prepare.view {
@@ -175,6 +201,40 @@ pub struct Commit {
 }
 
 impl Commit {
+
+    pub fn new_with_signature(key_pair_bytes: Vec<u8>, id: usize, view: usize, seq_num: usize, client_request_digest: Vec<u8>) -> Commit {
+        let key_pair = Keypair::from_bytes(key_pair_bytes.as_slice()).unwrap();
+
+        let mut pre_hashed = Sha512::new();
+        pre_hashed.update(b"Commit");
+        pre_hashed.update(view.to_le_bytes());
+        pre_hashed.update(seq_num.to_le_bytes());
+        pre_hashed.update(client_request_digest.as_slice());
+
+        let signature = key_pair.sign_prehashed(pre_hashed, None).unwrap();
+
+        Commit {
+            id,
+            view,
+            seq_num,
+            client_request_digest,
+            signature: signature.to_bytes().to_vec(),
+        }
+    }
+
+    pub fn is_properly_signed_by(&self, pub_key: &PublicKey) -> bool {
+        let mut pre_hashed = Sha512::new();
+        pre_hashed.update(b"Commit");
+        pre_hashed.update(self.view.to_le_bytes());
+        pre_hashed.update(self.seq_num.to_le_bytes());
+        pre_hashed.update(self.client_request_digest.as_slice());
+
+        let signature = Signature::from_bytes(self.signature.as_slice()).unwrap();
+
+        pub_key
+            .verify_prehashed(pre_hashed, None, &signature)
+            .is_ok()
+    }
 
     /// Does this commit message correspond to the prepare message
     pub fn corresponds_to(&self, prepare: &Prepare) -> bool {
@@ -207,7 +267,6 @@ pub struct ViewChange {
     pub checkpoint_messages: Vec<Prepare>,
     pub signature: Vec<u8>,
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ClientRequest {
@@ -252,13 +311,11 @@ pub enum NodeCommand {
     BroadCastMessageCommand(BroadCastMessage),
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SendMessage {
     pub destination: SocketAddr,
     pub message: Message,
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BroadCastMessage {
