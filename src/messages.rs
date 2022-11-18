@@ -47,7 +47,7 @@ impl Message {
     /// Is this message propertly signed by the given public key
     pub fn is_properly_signed_by(&self, pub_key: &PublicKey) -> bool {
         match self.clone() {
-            Message::IdentifierMessage(identifier) => {unreachable!()}
+            Message::IdentifierMessage(_) => {unreachable!()}
             Message::PrePrepareMessage(pre_prepare) => {pre_prepare.is_properly_signed_by(pub_key)}
             _ => {true}
         }
@@ -63,6 +63,8 @@ pub struct Identifier {
     pub pub_key_vec: Vec<u8>,
 }
 
+// Note that the pre-prepare messages are the only messages which actually
+// include the entire client request
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PrePrepare {
     pub id: NodeId,
@@ -174,7 +176,7 @@ pub struct Commit {
 
 impl Commit {
 
-    // does this commit message correspond to the prepare message
+    /// Does this commit message correspond to the prepare message
     pub fn corresponds_to(&self, prepare: &Prepare) -> bool {
         if self.view != prepare.view {
             return false;
@@ -189,6 +191,14 @@ impl Commit {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct CheckPoint {
+    pub id: NodeId,
+    pub committed_seq_num: usize,
+    pub state_digest: Vec<u8>,
+    pub signature: Vec<u8>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ViewChange {
     pub id: NodeId,
@@ -198,13 +208,6 @@ pub struct ViewChange {
     pub signature: Vec<u8>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct CheckPoint {
-    pub id: NodeId,
-    pub committed_seq_num: usize,
-    pub state_digest: Vec<u8>,
-    pub signature: Vec<u8>,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ClientRequest {
@@ -215,6 +218,8 @@ pub struct ClientRequest {
 }
 
 impl ClientRequest {
+    /// Hash of a Client Requyest used for a compressed version
+    /// of the request in future messages
     pub fn digest(&self) -> Vec<u8> {
         let mut hasher = Sha512::new();
         hasher.update(self.respond_addr.to_string().as_bytes());

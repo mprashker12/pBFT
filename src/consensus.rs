@@ -20,7 +20,7 @@ pub struct Consensus {
     pub id: NodeId,
     /// Configuration of the cluster this node is in
     pub config: Config,
-    /// keypair of the node
+    /// Keypair of the node
     pub keypair_bytes: Vec<u8>,
     /// Receiver of Consensus Commands
     pub rx_consensus: Receiver<ConsensusCommand>,
@@ -119,6 +119,7 @@ impl Consensus {
                         Message::CheckPointMessage(commit) => {}
 
                         Message::ClientRequestMessage(client_request) => {
+                            println!("Saw client request");
                             if self.state.should_process_client_request(&client_request) {
                                 if self.id != self.state.current_leader() {
                                     let _ = self
@@ -312,7 +313,6 @@ impl Consensus {
                 }
 
                 ConsensusCommand::EnterCommit(prepare) => {
-                    println!("BEGINNING COMMIT PHASE");
 
                     //todo make a new commit message builder
 
@@ -371,7 +371,7 @@ impl Consensus {
                 ConsensusCommand::InitViewChange(request) => {
                     if self.state.in_view_change || self.state.current_leader() == self.id {
                         // we are already in a view change state or we are currently the leader
-                        return;
+                        continue;
                     }
                     println!("Initializing view change...");
                     self.state.in_view_change = true;
@@ -393,11 +393,18 @@ impl Consensus {
                     self.view_changer.remove_from_wait_set(&client_request);
 
                     println!("Applying client request with seq_num {}", commit.seq_num);
-                    self.state.apply_commit(&client_request, &commit);
+                    
+                    let ret = self.state.apply_commit(&client_request, &commit);
+                    // using ret we will build a client response message
 
                     // The request we just committed was enough to now trigger a checkpoint
                     if self.state.last_seq_num_committed % self.config.checkpoint_frequency == 0 {
-                        //trigger the checkpoint process
+                        // trigger the checkpoint process
+                        // if a replica receives 2f + 1 of these checkpoints, 
+                        // it can begin to discard everythihng before the agreed sequence number. Also
+                        // if the replica does not have the state up to that point, it can 
+                        // make a request to get caught up to speed from one of these replicas.
+
                     }
                 }
             }

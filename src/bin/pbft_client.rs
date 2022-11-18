@@ -7,19 +7,27 @@ use serde_json;
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
+
+    // note that the client only needs f + 1 replies before accepting
+
     let me_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8079);
     let listener = TcpListener::bind(me_addr.clone()).await.unwrap();
     let mut node_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8060);
 
-    let mut node_stream = TcpStream::connect(node_addr).await.unwrap();
-    let message: Message = Message::ClientRequestMessage(ClientRequest {
-        respond_addr: me_addr,
-        time_stamp: 0,
-        key: String::from("def"),
-        value: Some(3),
-    });
-    let _bytes_written = node_stream.write(message.serialize().as_slice()).await?;
-
+   
+    let mut n = 0;
+    loop {
+        let mut node_stream = TcpStream::connect(node_addr).await.unwrap();
+        let message: Message = Message::ClientRequestMessage(ClientRequest {
+            respond_addr: me_addr,
+            time_stamp: n,
+            key: String::from("def"),
+            value: Some(3),
+        });
+        let _bytes_written = node_stream.write(message.serialize().as_slice()).await?;
+        std::thread::sleep(std::time::Duration::from_secs(4));
+        n += 1;
+    }
     loop {
         match listener.accept().await {
             Ok((stream, _)) => {

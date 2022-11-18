@@ -1,10 +1,12 @@
 use crate::config::Config;
 use crate::message_bank::MessageBank;
-use crate::messages::{ClientRequest, Commit, Message, PrePrepare, Prepare};
+use crate::messages::{ClientRequest, Commit, Message, PrePrepare, Prepare, ClientResponse};
 use crate::{Key, NodeId, Value};
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use sha2::{Digest, Sha256};
+use ed25519_dalek::{Digest, Sha512};
+use sha2::Sha256;
+
 
 #[derive(Default)]
 pub struct State {
@@ -90,24 +92,26 @@ impl State {
         true
     }
 
-    pub fn apply_commit(&mut self, request: &ClientRequest, commit: &Commit) {
+    pub fn apply_commit(&mut self, request: &ClientRequest, commit: &Commit) -> Option<Option<&Value>> {
         // todo - get the request from the commit view and seq num
+        self.last_seq_num_committed = commit.seq_num;
 
         if request.value.is_some() {
             // request is a set request
             self.store
                 .insert(request.clone().key, request.clone().value.unwrap());
+            None
         } else {
-
             //request is a get request
+            let ret = self.store.get(&request.key);
+            Some(ret)
         }
 
-        self.last_seq_num_committed = commit.seq_num;
     }
 
     /// Sha256 hash of the state store
     pub fn digest(&self) -> Vec<u8> {
-        let mut hasher = Sha256::new();
+        let mut hasher = Sha512::new();
 
         let state_bytes = serde_json::to_string(&self.store)
             .unwrap()

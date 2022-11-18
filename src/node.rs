@@ -140,7 +140,6 @@ impl Node {
 impl InnerNode {
     pub async fn read_message(&self, stream: &mut TcpStream) -> Result<()> {
         let mut reader = BufStream::new(stream);
-
         let mut buf = String::new();
         let _ = reader.read_line(&mut buf).await?;
         let message: Message = serde_json::from_str(&buf)?;
@@ -155,13 +154,11 @@ impl InnerNode {
             //println!("Received identifier {:?}", peer_id);
             peer_pub_keys.insert(peer_id, peer_pub_key);
             return Ok(());
-        }
-
-        if self.should_drop(&message).await {
-            // we don't pass the message to the consensus engine 
+        } else if self.should_drop(&message).await {
+            println!("Dropping message from {:?}", message.get_id());
             return Ok(());
         }
-        
+       
         let _ = self
             .tx_consensus
             .send(ConsensusCommand::ProcessMessage(message.clone()))
@@ -192,6 +189,7 @@ impl InnerNode {
     }
 
     pub async fn should_drop(&self, message: &Message) -> bool {
+        
         if let Message::ClientRequestMessage(_) = message {
             // we consider client requests to always be properly signed
             return false;
