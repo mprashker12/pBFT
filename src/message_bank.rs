@@ -12,4 +12,6 @@ pub struct MessageBank {
     pub outstanding_prepares: HashSet<Prepare>,
     /// Valid commits that we received that we did not accept
     pub outstanding_commits: HashSet<Commit>,
+
+    pub accepted_commits_not_applied: HashMap<usize, Commit>,
 }

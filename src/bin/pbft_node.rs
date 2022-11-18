@@ -39,7 +39,7 @@ async fn main() -> Result<()> {
         num_nodes: 3,
         num_faulty: 1,
         peer_addrs,
-        request_timeout: std::time::Duration::from_secs(15),
+        request_timeout: std::time::Duration::from_secs(25),
         checkpoint_frequency: 10,
     };
 

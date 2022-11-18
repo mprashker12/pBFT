@@ -65,7 +65,7 @@ pub struct Identifier {
 
 // Note that the pre-prepare messages are the only messages which actually
 // include the entire client request
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct PrePrepare {
     pub id: NodeId,
     pub view: usize,
@@ -273,9 +273,10 @@ pub enum ConsensusCommand {
     MisdirectedClientRequest(ClientRequest),
     InitPrePrepare(ClientRequest),
     AcceptPrePrepare(PrePrepare),
+    RebroadcastPrePrepare((usize, usize)),
     AcceptPrepare(Prepare),
     EnterCommit(Prepare),
     AcceptCommit(Commit),
     InitViewChange(ClientRequest),
-    ApplyClientRequest(Commit),
+    ApplyCommit(Commit),
 }

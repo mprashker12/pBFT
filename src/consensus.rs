@@ -4,7 +4,7 @@ use crate::messages::{
     SendMessage,
 };
 use crate::state::State;
-use crate::view_changer::ViewChanger;
+use crate::view_changer::{ViewChanger, self};
 use crate::NodeId;
 
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -53,6 +53,7 @@ impl Consensus {
             config: config.clone(),
             tx_consensus: tx_consensus.clone(),
             wait_set: Arc::new(Mutex::new(HashSet::new())),
+            sent_pre_prepares: Arc::new(Mutex::new(HashSet::new())),
         };
 
         Self {
@@ -187,6 +188,13 @@ impl Consensus {
                         self.state.seq_num,
                         &request,
                     );
+
+                    self.view_changer.add_to_sent_pre_prepares(&(pre_prepare.view, pre_prepare.seq_num));
+
+                    let view_changer = self.view_changer.clone();
+                    tokio::spawn(async move {
+                        view_changer.wait_for_sent_pre_prepares(&(pre_prepare.view, pre_prepare.seq_num)).await;
+                    });
                     
                     let pre_prepare_message = Message::PrePrepareMessage(pre_prepare.clone());
 
@@ -196,6 +204,22 @@ impl Consensus {
                             message: pre_prepare_message.clone(),
                         }))
                         .await;
+                }
+
+                ConsensusCommand::RebroadcastPrePrepare(view_seq_num_pair) => {
+                    println!("Rebroadcasting PrePrepare with seq-num {:?}", view_seq_num_pair);
+                    let pre_prepare = self.state.message_bank.accepted_pre_prepare_requests.get(&view_seq_num_pair).unwrap().clone();
+                    let pre_prepare_message = Message::PrePrepareMessage(pre_prepare.clone());
+                    let _ = self
+                        .tx_node
+                        .send(NodeCommand::BroadCastMessageCommand(BroadCastMessage {
+                            message: pre_prepare_message.clone(),
+                        }))
+                        .await;
+                    let view_changer = self.view_changer.clone();
+                    tokio::spawn(async move {
+                        view_changer.wait_for_sent_pre_prepares(&(pre_prepare.view, pre_prepare.seq_num)).await;
+                    });
                 }
 
                 ConsensusCommand::AcceptPrePrepare(pre_prepare) => {
@@ -355,7 +379,7 @@ impl Consensus {
                             // At this point, we have enough commit votes to commit the message
                             let _ = self
                                 .tx_consensus
-                                .send(ConsensusCommand::ApplyClientRequest(commit))
+                                .send(ConsensusCommand::ApplyCommit(commit))
                                 .await;
                         }
                     } else {
@@ -377,7 +401,7 @@ impl Consensus {
                     self.state.in_view_change = true;
                 }
 
-                ConsensusCommand::ApplyClientRequest(commit) => {
+                ConsensusCommand::ApplyCommit(commit) => {
                     // we now have permission to apply the client request
 
                     let client_request = self
@@ -391,11 +415,22 @@ impl Consensus {
 
                     // remove this request from the view changer so that we don't trigger a view change
                     self.view_changer.remove_from_wait_set(&client_request);
+                    self.view_changer.remove_from_sent_pre_prepares(&(commit.view, commit.seq_num));
 
-                    println!("Applying client request with seq_num {}", commit.seq_num);
-                    
-                    let ret = self.state.apply_commit(&client_request, &commit);
-                    // using ret we will build a client response message
+                    if commit.seq_num == self.state.last_seq_num_committed + 1 {
+                        println!("Applying client request with seq_num {}", commit.seq_num);
+
+                        let (ret, new_applies) = self.state.apply_commit(&client_request, &commit);
+                        for commit in new_applies.iter() {
+                            let _ = self.tx_consensus.send(ConsensusCommand::ApplyCommit(commit.clone())).await;
+                        }
+                        // using ret we will build a client response message
+                    } else if commit.seq_num > self.state.last_seq_num_committed + 1 {
+                        //the sequence number for this commit is too large, so we do not apply it yet
+                        if self.state.message_bank.accepted_commits_not_applied.insert(commit.seq_num, commit.clone()).is_none() {
+                            println!("Buffering client request with seq_num {}", commit.seq_num);
+                        }
+                    }
 
                     // The request we just committed was enough to now trigger a checkpoint
                     if self.state.last_seq_num_committed % self.config.checkpoint_frequency == 0 {

@@ -41,12 +41,12 @@ impl State {
         if pre_prepare.client_request_digest != pre_prepare.client_request.digest() {
             return false;
         }
-        if self
+        if let Some(e_pre_prepare) = self
             .message_bank
             .accepted_pre_prepare_requests
-            .contains_key(&(pre_prepare.view, pre_prepare.seq_num))
+            .get(&(pre_prepare.view, pre_prepare.seq_num))
         {
-            return false;
+            return e_pre_prepare.client_request_digest == pre_prepare.client_request_digest
         }
 
         true
@@ -92,11 +92,12 @@ impl State {
         true
     }
 
-    pub fn apply_commit(&mut self, request: &ClientRequest, commit: &Commit) -> Option<Option<&Value>> {
+    pub fn apply_commit(&mut self, request: &ClientRequest, commit: &Commit) -> (Option<Option<&Value>>, Vec<Commit>) {
         // todo - get the request from the commit view and seq num
         self.last_seq_num_committed = commit.seq_num;
+        self.message_bank.accepted_commits_not_applied.remove(&commit.seq_num);
 
-        if request.value.is_some() {
+        let commit_res = if request.value.is_some() {
             // request is a set request
             self.store
                 .insert(request.clone().key, request.clone().value.unwrap());
@@ -105,7 +106,19 @@ impl State {
             //request is a get request
             let ret = self.store.get(&request.key);
             Some(ret)
+        };
+
+        //determine if there are any outstanding commits which we can now apply
+
+        let mut new_applies = Vec::<Commit>::new();
+        let mut try_commit = commit.seq_num + 1;
+       
+        while let Some(commit) = self.message_bank.accepted_commits_not_applied.get(&try_commit) {
+            new_applies.push(commit.clone());
+            try_commit += 1;
         }
+        
+        (commit_res, new_applies)
 
     }
 

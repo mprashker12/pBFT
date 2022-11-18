@@ -16,7 +16,7 @@ async fn main() -> std::io::Result<()> {
 
    
     let mut n = 0;
-    loop {
+    //loop {
         let mut node_stream = TcpStream::connect(node_addr).await.unwrap();
         let message: Message = Message::ClientRequestMessage(ClientRequest {
             respond_addr: me_addr,
@@ -27,7 +27,7 @@ async fn main() -> std::io::Result<()> {
         let _bytes_written = node_stream.write(message.serialize().as_slice()).await?;
         std::thread::sleep(std::time::Duration::from_secs(4));
         n += 1;
-    }
+    //}
     loop {
         match listener.accept().await {
             Ok((stream, _)) => {

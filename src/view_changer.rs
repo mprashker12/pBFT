@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::messages::{ClientRequest, ConsensusCommand};
+use crate::messages::{ClientRequest, ConsensusCommand, PrePrepare};
 use crate::NodeId;
 
 use std::collections::HashSet;
@@ -20,9 +20,39 @@ pub struct ViewChanger {
     /// or we accept a pre-prepare message
     /// Used to initiate view changes
     pub wait_set: Arc<Mutex<HashSet<ClientRequest>>>,
+
+    pub sent_pre_prepares: Arc<Mutex<HashSet<(usize, usize)>>>,
 }
 
 impl ViewChanger {
+
+    pub fn add_to_sent_pre_prepares(&mut self, view_seq_num_pair: &(usize, usize)) -> bool {
+        let mut sent_pre_prepares = self.sent_pre_prepares.lock().unwrap();
+        sent_pre_prepares.insert(view_seq_num_pair.clone())
+    }
+
+    pub fn remove_from_sent_pre_prepares(&mut self, view_seq_num_pair: &(usize, usize)) {
+        let mut sent_pre_prepares = self.sent_pre_prepares.lock().unwrap();
+        sent_pre_prepares.remove(view_seq_num_pair);
+    }
+
+    pub fn is_in_sent_pre_prepares(&self, view_seq_num_pair: &(usize, usize)) -> bool {
+        let mut sent_pre_prepares = self.sent_pre_prepares.lock().unwrap();
+        sent_pre_prepares.contains(view_seq_num_pair)
+    }
+
+    pub async fn wait_for_sent_pre_prepares(&self, view_seq_num_pair: &(usize, usize)) {
+        sleep(std::time::Duration::from_secs(2)).await;
+        if self.is_in_sent_pre_prepares(&view_seq_num_pair.clone()) {
+            println!("Re");
+            let _ = self
+                .tx_consensus
+                .send(ConsensusCommand::RebroadcastPrePrepare(view_seq_num_pair.clone()))
+                .await;
+        }
+    }
+
+
     pub fn add_to_wait_set(&mut self, request: &ClientRequest) -> bool {
         let mut outstanding_requests = self.wait_set.lock().unwrap();
         outstanding_requests.insert(request.clone())
