@@ -20,7 +20,9 @@ pub struct ViewChanger {
     /// or we accept a pre-prepare message
     /// Used to initiate view changes
     pub wait_set: Arc<Mutex<HashSet<ClientRequest>>>,
-
+    /// There are sent pre-prepares sent by the leader which we have not applied yet
+    /// If a certain amount of time expires and we have not yet applied it
+    /// we re-broadcast the pre-prepare to the other peers
     pub sent_pre_prepares: Arc<Mutex<HashSet<(usize, usize)>>>,
 }
 
@@ -37,17 +39,16 @@ impl ViewChanger {
     }
 
     pub fn is_in_sent_pre_prepares(&self, view_seq_num_pair: &(usize, usize)) -> bool {
-        let mut sent_pre_prepares = self.sent_pre_prepares.lock().unwrap();
+        let sent_pre_prepares = self.sent_pre_prepares.lock().unwrap();
         sent_pre_prepares.contains(view_seq_num_pair)
     }
 
     pub async fn wait_for_sent_pre_prepares(&self, view_seq_num_pair: &(usize, usize)) {
         sleep(std::time::Duration::from_secs(2)).await;
         if self.is_in_sent_pre_prepares(&view_seq_num_pair.clone()) {
-            println!("Re");
             let _ = self
                 .tx_consensus
-                .send(ConsensusCommand::RebroadcastPrePrepare(view_seq_num_pair.clone()))
+                .send(ConsensusCommand::RebroadcastPrePrepare(*view_seq_num_pair))
                 .await;
         }
     }

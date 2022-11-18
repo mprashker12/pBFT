@@ -67,7 +67,7 @@ impl Consensus {
             view_changer,
         }
     }
-
+    #[allow(clippy::comparison_chain)]
     pub async fn spawn(&mut self) {
         loop {
             let res = self.rx_consensus.recv().await;
@@ -416,7 +416,7 @@ impl Consensus {
                     // remove this request from the view changer so that we don't trigger a view change
                     self.view_changer.remove_from_wait_set(&client_request);
                     self.view_changer.remove_from_sent_pre_prepares(&(commit.view, commit.seq_num));
-
+                    
                     if commit.seq_num == self.state.last_seq_num_committed + 1 {
                         println!("Applying client request with seq_num {}", commit.seq_num);
 

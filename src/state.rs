@@ -46,6 +46,8 @@ impl State {
             .accepted_pre_prepare_requests
             .get(&(pre_prepare.view, pre_prepare.seq_num))
         {
+            // if we already saw a pre-prepare request for this (view, seq-num) pair,
+            // then we will accept as along as the message digests are the same
             return e_pre_prepare.client_request_digest == pre_prepare.client_request_digest
         }
 
@@ -108,8 +110,7 @@ impl State {
             Some(ret)
         };
 
-        //determine if there are any outstanding commits which we can now apply
-
+        // determine if there are any outstanding commits which we can now apply
         let mut new_applies = Vec::<Commit>::new();
         let mut try_commit = commit.seq_num + 1;
        
