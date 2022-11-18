@@ -34,9 +34,13 @@ async fn main() -> Result<()> {
         2,
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8062),
     );
+    peer_addrs.insert(
+        3,
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8063),
+    );
 
     let config = Config {
-        num_nodes: 3,
+        num_nodes: 4,
         num_faulty: 1,
         peer_addrs,
         request_timeout: std::time::Duration::from_secs(25),

@@ -12,6 +12,8 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
+use log::{debug, error, info, log_enabled, Level};
+
 // Note that all communication between the Node and the Consensus engine takes place
 // by the outer consensus struct
 
@@ -72,7 +74,7 @@ impl Consensus {
         loop {
             let res = self.rx_consensus.recv().await;
             let cmd = res.unwrap();
-            //println!("Consensus Engine Received Command {:?}", cmd);
+            //info!("Consensus Engine Received Command {:?}", cmd);
             match cmd {
                 ConsensusCommand::ProcessMessage(message) => {
                     match message.clone() {
@@ -81,7 +83,7 @@ impl Consensus {
                         }
 
                         Message::PrePrepareMessage(pre_prepare) => {
-                            println!("Saw preprepare from {}", pre_prepare.id);
+                            info!("Saw preprepare from {}", pre_prepare.id);
                             if self.state.should_accept_pre_prepare(&pre_prepare) {
                                 let _ = self
                                     .tx_consensus
@@ -90,7 +92,7 @@ impl Consensus {
                             }
                         }
                         Message::PrepareMessage(prepare) => {
-                            println!("Saw prepare from {}", prepare.id);
+                            info!("Saw prepare from {}", prepare.id);
                             if self.state.should_accept_prepare(&prepare) {
                                 let _ = self
                                     .tx_consensus
@@ -104,7 +106,7 @@ impl Consensus {
                             }
                         }
                         Message::CommitMessage(commit) => {
-                            println!("Saw commit from {}", commit.id);
+                            info!("Saw commit from {}", commit.id);
                             if self.state.should_accept_commit(&commit) {
                                 let _ = self
                                     .tx_consensus
@@ -120,18 +122,18 @@ impl Consensus {
 
                         Message::ViewChangeMessage(view_change) => {}
                         Message::CheckPointMessage(checkpoint) => {
-                            // note that we accept checkpoint messages as long as they have been properly signed,
-                            // which must be the case by the time the message gets to this consensus layer
-                            self.state
-                                .message_bank
-                                .log
-                                .push_back(Message::CheckPointMessage(checkpoint.clone()));
+                            info!("Saw checkpoint from {}", checkpoint.id);
 
-                            // increment vote count for checkpoint with given committed seq num and given digest
+                            if self.state.should_accept_checkpoint(&checkpoint) {
+                                let _ = self
+                                    .tx_consensus
+                                    .send(ConsensusCommand::AcceptCheckpoint(checkpoint))
+                                    .await;
+                            }
                         }
 
                         Message::ClientRequestMessage(client_request) => {
-                            println!("Saw client request");
+                            info!("Saw client request");
                             if self.state.should_process_client_request(&client_request) {
                                 if self.id != self.state.current_leader() {
                                     let _ = self
@@ -224,7 +226,7 @@ impl Consensus {
                     // we are the leader and a pre-prepare message we sent has not been execute for some time
                     // so we rebroadcast the message to the networks
 
-                    println!(
+                    info!(
                         "Rebroadcasting PrePrepare with seq-num {:?}",
                         view_seq_num_pair
                     );
@@ -254,7 +256,7 @@ impl Consensus {
                 ConsensusCommand::AcceptPrePrepare(pre_prepare) => {
                     // We received a PrePrepare message from the network, and we see no violations
                     // So we will broadcast a corresponding prepare message and begin to count votes
-                    println!("Accepted PrePrepare from {}", pre_prepare.id);
+                    info!("Accepted PrePrepare from {}", pre_prepare.id);
                     self.state
                         .message_bank
                         .accepted_pre_prepare_requests
@@ -285,7 +287,7 @@ impl Consensus {
                     // we did not receive this pre-prepare message message yet
                     for e_prepare in self.state.message_bank.outstanding_prepares.iter() {
                         if e_prepare.corresponds_to(&pre_prepare) {
-                            println!("Found outstanding prepare from {}", e_prepare.id);
+                            info!("Found outstanding prepare from {}", e_prepare.id);
                             let _ = self
                                 .tx_consensus
                                 .send(ConsensusCommand::AcceptPrepare(e_prepare.clone()))
@@ -312,7 +314,7 @@ impl Consensus {
                     // to we increment the vote count, and if we have enough prepare votes
                     // then we move to the commit phases
 
-                    println!("Accepted Prepare from {}", prepare.id);
+                    info!("Accepted Prepare from {}", prepare.id);
 
                     // we are not accepting this prepare, so if it is our outstanding set, then
                     //we may remove it
@@ -356,7 +358,7 @@ impl Consensus {
                     // we did not receive this prepare message message yet
                     for e_commit in self.state.message_bank.outstanding_commits.iter() {
                         if e_commit.corresponds_to(&prepare) {
-                            println!("Found outstanding commit from {}", e_commit.id);
+                            info!("Found outstanding commit from {}", e_commit.id);
                             let _ = self
                                 .tx_consensus
                                 .send(ConsensusCommand::AcceptCommit(e_commit.clone()))
@@ -373,7 +375,7 @@ impl Consensus {
                         self.id,
                         prepare.view,
                         prepare.seq_num,
-                        prepare.client_request_digest
+                        prepare.client_request_digest,
                     );
 
                     let commit_message = Message::CommitMessage(commit);
@@ -389,7 +391,7 @@ impl Consensus {
                     // We received a Commit Message for a request that we deemed valid
                     // so we increment the vote count
 
-                    println!("Accepted commit from {}", commit.id);
+                    info!("Accepted commit from {}", commit.id);
 
                     self.state.message_bank.outstanding_commits.remove(&commit);
 
@@ -426,7 +428,7 @@ impl Consensus {
                         // we are already in a view change state or we are currently the leader
                         continue;
                     }
-                    println!("Initializing view change...");
+                    info!("Initializing view change...");
                     self.state.in_view_change = true;
                 }
 
@@ -448,7 +450,7 @@ impl Consensus {
                         .remove_from_sent_pre_prepares(&(commit.view, commit.seq_num));
 
                     if commit.seq_num == self.state.last_seq_num_committed + 1 {
-                        println!("Applying client request with seq_num {}", commit.seq_num);
+                        info!("Applying client request with seq_num {}", commit.seq_num);
 
                         let (ret, new_applies) = self.state.apply_commit(&client_request, &commit);
                         for commit in new_applies.iter() {
@@ -467,7 +469,7 @@ impl Consensus {
                             .insert(commit.seq_num, commit.clone())
                             .is_none()
                         {
-                            println!("Buffering client request with seq_num {}", commit.seq_num);
+                            info!("Buffering client request with seq_num {}", commit.seq_num);
                         }
                     }
 
@@ -481,6 +483,15 @@ impl Consensus {
 
                         // create a checkpoint message and broadcast it
                     }
+                }
+
+                ConsensusCommand::AcceptCheckpoint(checkpoint) => {
+                    self.state
+                        .message_bank
+                        .log
+                        .push_back(Message::CheckPointMessage(checkpoint.clone()));
+
+                    // increment vote count for checkpoint with given committed seq num and given digest
                 }
             }
         }

@@ -201,8 +201,13 @@ pub struct Commit {
 }
 
 impl Commit {
-
-    pub fn new_with_signature(key_pair_bytes: Vec<u8>, id: usize, view: usize, seq_num: usize, client_request_digest: Vec<u8>) -> Commit {
+    pub fn new_with_signature(
+        key_pair_bytes: Vec<u8>,
+        id: usize,
+        view: usize,
+        seq_num: usize,
+        client_request_digest: Vec<u8>,
+    ) -> Commit {
         let key_pair = Keypair::from_bytes(key_pair_bytes.as_slice()).unwrap();
 
         let mut pre_hashed = Sha512::new();
@@ -336,4 +341,5 @@ pub enum ConsensusCommand {
     AcceptCommit(Commit),
     InitViewChange(ClientRequest),
     ApplyCommit(Commit),
+    AcceptCheckpoint(CheckPoint),
 }

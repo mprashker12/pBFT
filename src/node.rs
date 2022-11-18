@@ -17,6 +17,9 @@ use tokio::{io::AsyncBufReadExt, sync::Mutex};
 
 use ed25519_dalek::{Keypair, PublicKey, SecretKey};
 
+use env_logger::Env;
+use log::{debug, error, info, log_enabled, Level};
+
 // TODO: We may use a mpsc channel for the inner node to communicate with its parent node
 
 pub struct Node {
@@ -63,6 +66,9 @@ impl Node {
         tx_consensus: Sender<ConsensusCommand>,
         tx_node: Sender<NodeCommand>,
     ) -> Self {
+        let mut logger = env_logger::Builder::from_env(Env::default().default_filter_or("info"));
+        logger.init();
+
         let addr_me = *config.peer_addrs.get(&id).unwrap();
 
         let inner = InnerNode {
@@ -87,7 +93,7 @@ impl Node {
 
     pub async fn spawn(&mut self) {
         let listener = TcpListener::bind(self.addr).await.unwrap();
-        println!("Node {} listening on {}", self.id, self.addr);
+        info!("Node {} listening on {}", self.id, self.addr);
 
         // We periodically broadcast our identity to all of the other nodes in the network
         let inner = self.inner.clone();

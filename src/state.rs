@@ -1,6 +1,8 @@
 use crate::config::Config;
 use crate::message_bank::MessageBank;
-use crate::messages::{ClientRequest, ClientResponse, Commit, Message, PrePrepare, Prepare};
+use crate::messages::{
+    CheckPoint, ClientRequest, ClientResponse, Commit, Message, PrePrepare, Prepare,
+};
 use crate::{Key, NodeId, Value};
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -94,13 +96,19 @@ impl State {
         true
     }
 
-    pub fn should_process_client_request(&self, request: &ClientRequest) -> bool {
+    pub fn should_process_client_request(&self, _request: &ClientRequest) -> bool {
         // this will only be called by the master replica
         if self.in_view_change {
             return false;
         }
         // todo: look at the timestamp of the request and make sure it is at least as large as the last committed time stamp
         // sent to that client
+        true
+    }
+
+    pub fn should_accept_checkpoint(&self, _checkpoint: &CheckPoint) -> bool {
+        // note that we accept checkpoint messages as long as they have been properly signed,
+        // which must be the case by the time the message gets to this consensus layer
         true
     }
 
