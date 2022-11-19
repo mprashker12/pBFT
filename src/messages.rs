@@ -272,7 +272,7 @@ impl CheckPoint {
         state_digest: Vec<u8>,
         checkpoint_commits: Vec<(Commit, ClientRequest)>,
     ) -> Self {
-        //todo
+        //todo make a signature
         let mut signature = Vec::new();
 
         Self {
@@ -324,9 +324,23 @@ pub struct ClientResponse {
     pub id: NodeId,
     pub time_stamp: usize,
     pub key: Key,
-    pub value: Value,
+    pub value: Option<Value>,
     pub success: bool,
     pub signature: Vec<u8>,
+}
+
+impl ClientResponse {
+    pub fn new_with_signature(id: NodeId, time_stamp: usize, key: Key, value: Option<Value>, success: bool) -> ClientResponse {
+        let mut signature = Vec::<u8>::new();
+        ClientResponse {
+            id, 
+            time_stamp, 
+            key, 
+            value, 
+            success,
+            signature
+        }
+    }
 }
 
 // Commands to Node

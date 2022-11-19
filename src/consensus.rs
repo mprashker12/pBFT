@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::messages::{
     BroadCastMessage, CheckPoint, ClientRequest, Commit, ConsensusCommand, Message, NodeCommand,
-    PrePrepare, Prepare, SendMessage,
+    PrePrepare, Prepare, SendMessage, ClientResponse
 };
 use crate::state::State;
 use crate::view_changer::{self, ViewChanger};
@@ -442,6 +442,7 @@ impl Consensus {
                         .unwrap()
                         .clone()
                         .client_request;
+
                     self.apply_commit(&commit, &client_request).await;
                     info!("New state: {}" ,self.state.last_seq_num_committed);
                     // The request we just committed was enough to now trigger a checkpoint
@@ -477,7 +478,14 @@ impl Consensus {
                             for (commit, client_request) in checkpoint.checkpoint_commits.iter() {
                                 self.apply_commit(commit, client_request).await;
                             }
+                            // make sure that our new state is actually the state in the checkpoint messages
                             assert_eq!(self.state.digest(), checkpoint.state_digest);
+
+                            // todo: log this checkpoint certificate for future view changes
+
+                            // update the stable seq num and garbage collect up to this seq num
+                            self.state.last_stable_seq_num = checkpoint.committed_seq_num;
+                            self.state.message_bank.garbage_collect(checkpoint.committed_seq_num);
                         }
                     } else {
                         // first time we got a prepare message for this view and sequence number
@@ -510,7 +518,27 @@ impl Consensus {
                     .send(ConsensusCommand::ApplyCommit(commit.clone()))
                     .await;
             }
-            // using ret we will build a client response message
+
+            
+            // build the client response and send to client
+            let res_val = if ret.is_some() {Some(*ret.unwrap().unwrap())} else {None};
+            let res_success = res_val.is_some() || client_request.value.is_some();
+
+            
+            let client_response = ClientResponse::new_with_signature (
+                self.id,
+                client_request.time_stamp,
+                client_request.key.clone(),
+                res_val,
+                res_success
+            );
+
+            let _ = self.tx_node.send(NodeCommand::SendMessageCommand(SendMessage {
+                message: Message::ClientResponseMessage(client_response),
+                destination: client_request.respond_addr
+            })).await;
+
+
         } else if commit.seq_num > self.state.last_seq_num_committed + 1 {
             //the sequence number for this commit is too large, so we do not apply it yet
             if self

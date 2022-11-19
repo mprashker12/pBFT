@@ -12,8 +12,17 @@ pub struct MessageBank {
     pub outstanding_prepares: HashSet<Prepare>,
     /// Valid commits that we received that we did not accept
     pub outstanding_commits: HashSet<Commit>,
-    /// commits we accepted but did not apply
+    /// Commits we accepted but did not apply
     pub accepted_commits_not_applied: HashMap<usize, Commit>,
-
+    /// Maps a sequence number to the commit applied at a given sequence number
+    /// together with the associated client request
     pub applied_commits: HashMap<usize, (Commit, ClientRequest)>,
+}
+
+impl MessageBank {
+
+    /// Removes all state pertaining to messages with
+    /// with sequence number < seq_num
+    pub fn garbage_collect(&mut self, seq_num: usize) {}
+    
 }
