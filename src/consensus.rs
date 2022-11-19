@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::messages::{
-    BroadCastMessage, CheckPoint, Commit, ConsensusCommand, Message, NodeCommand, PrePrepare,
-    Prepare, SendMessage,
+    BroadCastMessage, CheckPoint, ClientRequest, Commit, ConsensusCommand, Message, NodeCommand,
+    PrePrepare, Prepare, SendMessage,
 };
 use crate::state::State;
 use crate::view_changer::{self, ViewChanger};
@@ -69,7 +69,7 @@ impl Consensus {
             view_changer,
         }
     }
-    #[allow(clippy::comparison_chain)]
+
     pub async fn spawn(&mut self) {
         loop {
             let res = self.rx_consensus.recv().await;
@@ -434,7 +434,6 @@ impl Consensus {
 
                 ConsensusCommand::ApplyCommit(commit) => {
                     // we now have permission to apply the client request
-
                     let client_request = self
                         .state
                         .message_bank
@@ -443,38 +442,12 @@ impl Consensus {
                         .unwrap()
                         .clone()
                         .client_request;
-
-                    // remove this request from the view changer so that we don't trigger a view change
-                    self.view_changer.remove_from_wait_set(&client_request);
-                    self.view_changer
-                        .remove_from_sent_pre_prepares(&(commit.view, commit.seq_num));
-
-                    if commit.seq_num == self.state.last_seq_num_committed + 1 {
-                        info!("Applying client request with seq_num {}", commit.seq_num);
-
-                        let (ret, new_applies) = self.state.apply_commit(&client_request, &commit);
-                        for commit in new_applies.iter() {
-                            let _ = self
-                                .tx_consensus
-                                .send(ConsensusCommand::ApplyCommit(commit.clone()))
-                                .await;
-                        }
-                        // using ret we will build a client response message
-                    } else if commit.seq_num > self.state.last_seq_num_committed + 1 {
-                        //the sequence number for this commit is too large, so we do not apply it yet
-                        if self
-                            .state
-                            .message_bank
-                            .accepted_commits_not_applied
-                            .insert(commit.seq_num, commit.clone())
-                            .is_none()
-                        {
-                            info!("Buffering client request with seq_num {}", commit.seq_num);
-                        }
-                    }
-
+                    self.apply_commit(&commit, &client_request).await;
+                    info!("New state: {}" ,self.state.last_seq_num_committed);
                     // The request we just committed was enough to now trigger a checkpoint
-                    if self.state.last_seq_num_committed % self.config.checkpoint_frequency == 0 {
+                    if self.state.last_seq_num_committed % self.config.checkpoint_frequency == 0
+                        && self.state.last_seq_num_committed > self.state.last_stable_seq_num
+                    {
                         // trigger the checkpoint process
                         // if a replica receives 2f + 1 of these checkpoints,
                         // it can begin to discard everythihng before the agreed sequence number. Also
@@ -482,6 +455,7 @@ impl Consensus {
                         // make a request to get caught up to speed from one of these replicas.
 
                         // create a checkpoint message and broadcast it
+                        self.init_checkpoint().await;
                     }
                 }
 
@@ -492,8 +466,91 @@ impl Consensus {
                         .push_back(Message::CheckPointMessage(checkpoint.clone()));
 
                     // increment vote count for checkpoint with given committed seq num and given digest
+                    if let Some(curr_vote_set) = self.state.checkpoint_votes.get_mut(&(
+                        checkpoint.committed_seq_num,
+                        checkpoint.state_digest.clone(),
+                    )) {
+                        curr_vote_set.insert(checkpoint.id);
+                        if curr_vote_set.len() > 2 * self.config.num_faulty {
+                            info!("Updating state from checkpoint");
+                            // At this point, we have enough checkpoint messages to update out state
+                            for (commit, client_request) in checkpoint.checkpoint_commits.iter() {
+                                self.apply_commit(commit, client_request).await;
+                            }
+                            assert_eq!(self.state.digest(), checkpoint.state_digest);
+                        }
+                    } else {
+                        // first time we got a prepare message for this view and sequence number
+                        let mut new_vote_set = HashSet::new();
+                        new_vote_set.insert(checkpoint.id);
+                        self.state.checkpoint_votes.insert(
+                            (checkpoint.committed_seq_num, checkpoint.state_digest),
+                            new_vote_set,
+                        );
+                    }
                 }
             }
         }
+    }
+
+    #[allow(clippy::comparison_chain)]
+    pub async fn apply_commit(&mut self, commit: &Commit, client_request: &ClientRequest) {
+        // remove this request from the view changer so that we don't trigger a view change
+        self.view_changer.remove_from_wait_set(client_request);
+        self.view_changer
+            .remove_from_sent_pre_prepares(&(commit.view, commit.seq_num));
+
+        if commit.seq_num == self.state.last_seq_num_committed + 1 {
+            info!("Applying client request with seq_num {}", commit.seq_num);
+
+            let (ret, new_applies) = self.state.apply_commit(client_request, commit);
+            for commit in new_applies.iter() {
+                let _ = self
+                    .tx_consensus
+                    .send(ConsensusCommand::ApplyCommit(commit.clone()))
+                    .await;
+            }
+            // using ret we will build a client response message
+        } else if commit.seq_num > self.state.last_seq_num_committed + 1 {
+            //the sequence number for this commit is too large, so we do not apply it yet
+            if self
+                .state
+                .message_bank
+                .accepted_commits_not_applied
+                .insert(commit.seq_num, commit.clone())
+                .is_none()
+            {
+                info!("Buffering client request with seq_num {}", commit.seq_num);
+            }
+        }
+    }
+
+    pub async fn init_checkpoint(&mut self) {
+        info!("Initiating checkpoint");
+        let mut checkpoint_commits = Vec::<(Commit, ClientRequest)>::new();
+        for seq_num in self.state.last_stable_seq_num + 1..self.state.last_seq_num_committed + 1 {
+            checkpoint_commits.push(
+                self.state
+                    .message_bank
+                    .applied_commits
+                    .get(&seq_num)
+                    .unwrap()
+                    .clone(),
+            );
+        }
+
+        let checkpoint = CheckPoint::new(
+            self.id,
+            self.state.last_seq_num_committed,
+            self.state.digest(),
+            checkpoint_commits,
+        );
+
+        let _ = self
+            .tx_node
+            .send(NodeCommand::BroadCastMessageCommand(BroadCastMessage {
+                message: Message::CheckPointMessage(checkpoint),
+            }))
+            .await;
     }
 }

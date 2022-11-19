@@ -15,6 +15,8 @@ pub struct State {
     pub in_view_change: bool,
     pub view: usize,
     pub seq_num: usize,
+    /// Sequence number of last stable checkpoint
+    pub last_stable_seq_num: usize,
     pub last_seq_num_committed: usize,
     /// Maps (view, seq_num) to Ids of nodes who we
     /// have accepted prepare messages from for the associated transaction
@@ -122,6 +124,10 @@ impl State {
         self.message_bank
             .accepted_commits_not_applied
             .remove(&(commit.seq_num));
+
+        self.message_bank
+            .applied_commits
+            .insert(commit.seq_num, (commit.clone(), request.clone()));
 
         let commit_res = if request.value.is_some() {
             // request is a set request
