@@ -3,7 +3,6 @@ use std::net::SocketAddr;
 
 use crate::NodeId;
 
-
 #[derive(Clone, Default)]
 pub struct Config {
     /// Number of nodes in the system
@@ -12,7 +11,7 @@ pub struct Config {
     pub num_faulty: usize,
     /// Address which each node is listening on
     pub peer_addrs: HashMap<NodeId, SocketAddr>,
-    
+
     pub request_timeout: std::time::Duration,
 
     /// KEY ASSUMPTION: A node can not be down for more than an entire checkpoint interval
