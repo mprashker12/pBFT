@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::net::SocketAddr;
 
 use serde::{Deserialize, Serialize};
@@ -256,11 +257,12 @@ impl Commit {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CheckPoint {
     pub id: NodeId,
     pub committed_seq_num: usize,
     pub state_digest: Vec<u8>,
+    pub state: HashMap<Key, Value>,
     pub checkpoint_commits: Vec<(Commit, ClientRequest)>,
     pub signature: Vec<u8>,
 }
@@ -270,6 +272,7 @@ impl CheckPoint {
         id: usize,
         committed_seq_num: usize,
         state_digest: Vec<u8>,
+        state: HashMap<Key, Value>,
         checkpoint_commits: Vec<(Commit, ClientRequest)>,
     ) -> Self {
         //todo make a signature
@@ -279,6 +282,7 @@ impl CheckPoint {
             id,
             committed_seq_num,
             state_digest,
+            state,
             checkpoint_commits,
             signature,
         }

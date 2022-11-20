@@ -478,8 +478,14 @@ impl Consensus {
                             for (commit, client_request) in checkpoint.checkpoint_commits.iter() {
                                 self.apply_commit(commit, client_request).await;
                             }
-                            // make sure that our new state is actually the state in the checkpoint messages
-                            assert_eq!(self.state.digest(), checkpoint.state_digest);
+
+                            if self.state.last_seq_num_committed < checkpoint.committed_seq_num {
+                                // if this node is still behind, we fast-forward its state
+                                // but note that no client responses are sent.
+                                self.state.store = checkpoint.state;
+                                self.state.last_seq_num_committed = checkpoint.committed_seq_num;
+                            }
+                                                        
 
                             // todo: log this checkpoint certificate for future view changes
 
@@ -521,6 +527,7 @@ impl Consensus {
 
             
             // build the client response and send to client
+
             let res_val = if ret.is_some() {Some(*ret.unwrap().unwrap())} else {None};
             let res_success = res_val.is_some() || client_request.value.is_some();
 
@@ -571,6 +578,7 @@ impl Consensus {
             self.id,
             self.state.last_seq_num_committed,
             self.state.digest(),
+            self.state.store.clone(),
             checkpoint_commits,
         );
 
