@@ -268,7 +268,8 @@ pub struct CheckPoint {
 }
 
 impl CheckPoint {
-    pub fn new(
+    pub fn new_with_signature(
+        key_pair_bytes: Vec<u8>,
         id: usize,
         committed_seq_num: usize,
         state_digest: Vec<u8>,
@@ -293,9 +294,15 @@ impl CheckPoint {
 pub struct ViewChange {
     pub id: NodeId,
     pub new_view: usize,
-    pub seq_num: usize,
-    pub checkpoint_messages: Vec<Prepare>,
+    pub last_stable_seq_num: usize,
+    pub checkpoint_proof: Vec<CheckPoint>,
+    pub subsequent_pre_prepares: HashMap<usize, PrePrepare>,
+    pub subsequent_prepares: HashMap<usize, Prepare>,
     pub signature: Vec<u8>,
+}
+
+impl ViewChange {
+    
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -385,6 +392,7 @@ pub enum ConsensusCommand {
     EnterCommit(Prepare),
     AcceptCommit(Commit),
     InitViewChange(ClientRequest),
+    AcceptViewChange(ViewChange),
     ApplyCommit(Commit),
     AcceptCheckpoint(CheckPoint),
 }

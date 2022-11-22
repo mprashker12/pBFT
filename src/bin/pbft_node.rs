@@ -60,7 +60,6 @@ async fn main() -> Result<()> {
         config.clone(),
         keypair_bytes.clone(),
         keypair.public,
-        keypair.secret,
         rx_node,
         tx_consensus.clone(),
         tx_node.clone(),

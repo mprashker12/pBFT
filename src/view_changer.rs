@@ -20,16 +20,17 @@ pub struct ViewChanger {
     /// or we accept a pre-prepare message
     /// Used to initiate view changes
     pub wait_set: Arc<Mutex<HashSet<ClientRequest>>>,
-    /// There are sent pre-prepares sent by the leader which we have not applied yet
+    /// Theaw are pre-prepares sent by the leader which we have not applied yet
     /// If a certain amount of time expires and we have not yet applied it
     /// we re-broadcast the pre-prepare to the other peers
+    /// Pre-prepares are indexed by (view, seq_num)
     pub sent_pre_prepares: Arc<Mutex<HashSet<(usize, usize)>>>,
 }
 
 impl ViewChanger {
     pub fn add_to_sent_pre_prepares(&mut self, view_seq_num_pair: &(usize, usize)) -> bool {
         let mut sent_pre_prepares = self.sent_pre_prepares.lock().unwrap();
-        sent_pre_prepares.insert(view_seq_num_pair.clone())
+        sent_pre_prepares.insert(*view_seq_num_pair)
     }
 
     pub fn remove_from_sent_pre_prepares(&mut self, view_seq_num_pair: &(usize, usize)) {

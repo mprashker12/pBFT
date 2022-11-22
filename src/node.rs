@@ -41,17 +41,15 @@ pub struct InnerNode {
     pub id: NodeId,
     /// Config of the cluster of the outer node
     pub config: Config,
-
+    /// Keypair of this node used to sign messages
     pub keypair_bytes: Vec<u8>,
-
+    /// Public key of this node
     pub pub_key: PublicKey,
-
-    pub secret_key: Arc<SecretKey>,
-
+    /// Known public keys of peers
     pub peer_pub_keys: Arc<Mutex<HashMap<NodeId, PublicKey>>>,
-    /// Consensus engine
+    /// Send Consensus Commands to Consensus engine
     pub tx_consensus: Sender<ConsensusCommand>,
-    /// Send Node Commands to itself (used internally)
+    /// Send Node Commands to itself 
     pub tx_node: Sender<NodeCommand>,
 }
 
@@ -61,7 +59,6 @@ impl Node {
         config: Config,
         keypair_bytes: Vec<u8>,
         pub_key: PublicKey,
-        secret_key: SecretKey,
         rx_node: Receiver<NodeCommand>,
         tx_consensus: Sender<ConsensusCommand>,
         tx_node: Sender<NodeCommand>,
@@ -76,7 +73,6 @@ impl Node {
             config: config.clone(),
             keypair_bytes,
             pub_key,
-            secret_key: Arc::new(secret_key),
             peer_pub_keys: Arc::new(Mutex::new(HashMap::new())),
             tx_consensus,
             tx_node,

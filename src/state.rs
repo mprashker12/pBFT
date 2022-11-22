@@ -1,22 +1,28 @@
 use crate::config::Config;
 use crate::message_bank::MessageBank;
 use crate::messages::{
-    CheckPoint, ClientRequest, ClientResponse, Commit, Message, PrePrepare, Prepare,
+    CheckPoint, ClientRequest, ClientResponse, Commit, Message, PrePrepare, Prepare, ViewChange
 };
 use crate::{Key, NodeId, Value};
+
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use ed25519_dalek::{Digest, Sha512};
-use sha2::Sha256;
+
 
 #[derive(Default)]
 pub struct State {
+    /// Configuration data of the cluster this node is in. 
     pub config: Config,
+    /// Has this node issued a view-change message which has not been resolved
     pub in_view_change: bool,
+    /// Current view we are in
     pub view: usize,
+    /// Used by the leader to determine the next sequence number to assign a client request
     pub seq_num: usize,
     /// Sequence number of last stable checkpoint
     pub last_stable_seq_num: usize,
+    /// Sequence number of last request which was applied to the state
     pub last_seq_num_committed: usize,
     /// Maps (view, seq_num) to Ids of nodes who we
     /// have accepted prepare messages from for the associated transaction
@@ -27,12 +33,23 @@ pub struct State {
     /// Maps (seq_num, digest) pair to the Ids of the nodes
     /// who we have received corresponding checkpoints from
     pub checkpoint_votes: HashMap<(usize, Vec<u8>), HashSet<NodeId>>,
+    /// Maps a NodeId to the most recent checkpoint we have seen from that node
+    /// since the last stable checkpoint
+    /// Note that this is reset every time we hit a new checkpoint
+    pub checkpoints_current_round: HashMap<usize, CheckPoint>,
+    /// This consists of 2f + 1 checkpoint messages which were used to 
+    /// move to the current stable checkpoint
+    /// This is used for subsequent view change messages
+    pub last_checkpoint_proof: Vec<CheckPoint>,
+    /// Maps node Ids to view change messages we have received for the subsequent view
+    pub view_change_votes: HashMap<NodeId, ViewChange>,
     /// Structure storing all messages, including log
     pub message_bank: MessageBank,
+    /// Key-Value store which the system actually maintains
     pub store: HashMap<Key, Value>,
 }
 impl State {
-    // todo: move these functions into the state struct
+
     pub fn current_leader(&self) -> NodeId {
         self.view % self.config.num_nodes
     }
@@ -114,6 +131,11 @@ impl State {
         true
     }
 
+    pub fn should_accept_view_change(&self, view_change: &ViewChange) -> bool {
+        // make sure the view change is well formed and the iew change is v + 1
+        true
+    }
+
     pub fn apply_commit(
         &mut self,
         request: &ClientRequest,
@@ -156,7 +178,26 @@ impl State {
         (commit_res, new_applies)
     }
 
-    /// Sha256 hash of the state store
+    pub fn update_checkpoint_meta(&mut self, seq_num: &usize, state_digest: &[u8]) {
+        self.last_checkpoint_proof.clear();
+
+        let curr_vote_set = self.checkpoint_votes.get(&(*seq_num, state_digest.to_vec())).unwrap();
+        for node_id in curr_vote_set.iter() {
+            self.last_checkpoint_proof.push(self.checkpoints_current_round.get(node_id).unwrap().clone());
+        }
+
+        self.checkpoint_votes.clear();
+        self.checkpoints_current_round.clear();
+
+    }
+
+    pub fn garbage_collect(&mut self) {
+        self.message_bank.garbage_collect(self.last_stable_seq_num);
+
+        //todo: remove all messages from prepare_votes and checkpoint votes that pertain to old messages
+    }
+
+    /// Sha512 hash of the state store
     pub fn digest(&self) -> Vec<u8> {
         let mut hasher = Sha512::new();
 

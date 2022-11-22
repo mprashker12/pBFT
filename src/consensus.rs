@@ -120,7 +120,11 @@ impl Consensus {
                             }
                         }
 
-                        Message::ViewChangeMessage(view_change) => {}
+                        Message::ViewChangeMessage(view_change) => {
+                            if self.state.should_accept_view_change(&view_change) {
+                                let _ = self.tx_consensus.send(ConsensusCommand::AcceptViewChange(view_change)).await;
+                            }
+                        }
                         Message::CheckPointMessage(checkpoint) => {
                             info!("Saw checkpoint from {}", checkpoint.id);
 
@@ -430,6 +434,15 @@ impl Consensus {
                     }
                     info!("Initializing view change...");
                     self.state.in_view_change = true;
+
+                    // construct the view change object
+
+                }
+
+                ConsensusCommand::AcceptViewChange(view_change) => {
+                    // update the vote count.
+                    // if there are enough votes (and we are the primary for the next view)
+                    // then we broadcast a corresponding new_view message
                 }
 
                 ConsensusCommand::ApplyCommit(commit) => {
@@ -445,17 +458,12 @@ impl Consensus {
 
                     self.apply_commit(&commit, &client_request).await;
                     info!("New state: {}", self.state.last_seq_num_committed);
+
                     // The request we just committed was enough to now trigger a checkpoint
                     if self.state.last_seq_num_committed % self.config.checkpoint_frequency == 0
                         && self.state.last_seq_num_committed > self.state.last_stable_seq_num
                     {
-                        // trigger the checkpoint process
-                        // if a replica receives 2f + 1 of these checkpoints,
-                        // it can begin to discard everythihng before the agreed sequence number. Also
-                        // if the replica does not have the state up to that point, it can
-                        // make a request to get caught up to speed from one of these replicas.
-
-                        // create a checkpoint message and broadcast it
+                        // The request we just committed was enough to now trigger a checkpoint
                         self.init_checkpoint().await;
                     }
                 }
@@ -474,6 +482,8 @@ impl Consensus {
                         checkpoint.clone(),
                     );
 
+                    self.state.checkpoints_current_round.insert(checkpoint.id, checkpoint.clone());
+
                     // increment vote count for checkpoint with given committed seq num and given digest
                     if let Some(curr_vote_set) = self.state.checkpoint_votes.get_mut(&(
                         checkpoint.committed_seq_num,
@@ -481,28 +491,28 @@ impl Consensus {
                     )) {
                         curr_vote_set.insert(checkpoint.id);
                         if curr_vote_set.len() > 2 * self.config.num_faulty {
-                            info!("Updating state from checkpoint");
                             // At this point, we have enough checkpoint messages to update out state
+                            info!("Updating state from checkpoint");
+                            
                             for (commit, client_request) in checkpoint.checkpoint_commits.iter() {
                                 self.apply_commit(commit, client_request).await;
                             }
 
                             if self.state.last_seq_num_committed < checkpoint.committed_seq_num {
-                                // if this node is still behind, we fast-forward its state
-                                // but note that no client responses are sent.
+                                // if this node is still behind after applying all commits in the checkpoint, 
+                                // we fast-forward its state, but note that no client responses are sent.
                                 self.state.store = checkpoint.state;
                                 self.state.last_seq_num_committed = checkpoint.committed_seq_num;
                             }
-
-                            // todo: we now have access to all of the checkpoints which we can use for
-                            // future view change messages
+                            
+                            // make a new proof of this checkpoint for subsequent view change messages
+                            self.state.update_checkpoint_meta(&checkpoint.committed_seq_num, &checkpoint.state_digest.clone());
 
                             // update the stable seq num and garbage collect up to this seq num
                             self.state.last_stable_seq_num = checkpoint.committed_seq_num;
+                            
                             // remove all of the messages pertaining to requests with seq_num < last_stable_seq_num
-                            self.state
-                                .message_bank
-                                .garbage_collect(self.state.last_stable_seq_num);
+                            self.state.garbage_collect();
                         }
                     } else {
                         // first time we got a prepare message for this view and sequence number
@@ -588,7 +598,8 @@ impl Consensus {
             );
         }
 
-        let checkpoint = CheckPoint::new(
+        let checkpoint = CheckPoint::new_with_signature(
+            self.keypair_bytes.clone(),
             self.id,
             self.state.last_seq_num_committed,
             self.state.digest(),
