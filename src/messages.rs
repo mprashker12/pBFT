@@ -354,7 +354,15 @@ pub struct NewView {
     id: NodeId,
 }
 
-impl NewView {}
+impl NewView {
+    pub fn new_with_signature(keypair_bytes: Vec<u8>, id: usize) -> Self {
+        Self {
+            id
+        }
+    }
+
+    pub fn is_properly_signed_by(&self, pub_key: &PublicKey) -> bool {true}
+}
 
 // The following message are not consensus messages and are sent to and from the client
 

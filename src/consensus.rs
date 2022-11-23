@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::messages::{
     BroadCastMessage, CheckPoint, ClientRequest, ClientResponse, Commit, ConsensusCommand, Message,
-    NodeCommand, PrePrepare, Prepare, SendMessage, ViewChange,
+    NodeCommand, PrePrepare, Prepare, SendMessage, ViewChange, NewView
 };
 use crate::state::State;
 use crate::view_changer::{self, ViewChanger};
@@ -217,12 +217,6 @@ impl Consensus {
                     // so we broadcast a Pre_prepare Message to the network and assign
                     // the next sequence number to this request
                     if self.state.message_bank.sent_requests.contains(&request) {
-                        // we already broadcasted this request to the network
-                        // (we potentially received the same request many times from the client,
-                        // or we received many misdirected request message from other nodes),
-                        // so we ignore the request
-                        // (Note that the client timestamps requests, so we will still process the same request
-                        // if the client actually issues it more than once)
                         continue;
                     }
 
@@ -508,6 +502,11 @@ impl Consensus {
                         .insert(view_change.id, view_change.clone());
                     if self.state.view_change_votes.len() > 2 * self.config.num_faulty {
                         // broadcast a new view message
+                        info!("Broadcasting new view");
+                        let new_view = NewView::new_with_signature(self.keypair_bytes.clone(), self.id);
+                        let _ = self.tx_node.send(NodeCommand::BroadCastMessageCommand(BroadCastMessage {
+                            message: Message::NewViewMessage(new_view)
+                        })).await;
                     }
                 }
 
