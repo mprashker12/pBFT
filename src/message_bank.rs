@@ -5,9 +5,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 #[derive(Default)]
 pub struct MessageBank {
-    /// The log of accepted messages
-    pub log: VecDeque<Message>,
-    /// PrePrepare requests which were sent as the leader
+    /// PrePrepare requests which were sent either as the leader
+    /// or were rebroadcast to the leader if this node is a replica
     /// This is used to make sure we do not broadcast the same request multiple times to the network
     pub sent_requests: HashSet<ClientRequest>,
     /// Pre-prepare messages by (view, seq_num) that
@@ -31,7 +30,5 @@ pub struct MessageBank {
 impl MessageBank {
     /// Removes all state pertaining to messages with
     /// with sequence number < upper_seq_num
-    pub fn garbage_collect(&mut self, upper_seq_num: usize) {
-        
-    }
+    pub fn garbage_collect(&mut self, upper_seq_num: usize) {}
 }

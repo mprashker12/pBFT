@@ -1,7 +1,8 @@
 use crate::config::Config;
 use crate::message_bank::MessageBank;
 use crate::messages::{
-    CheckPoint, ClientRequest, ClientResponse, Commit, Message, PrePrepare, Prepare, ViewChange, NewView,
+    CheckPoint, ClientRequest, ClientResponse, Commit, Message, NewView, PrePrepare, Prepare,
+    ViewChange,
 };
 use crate::node::Node;
 use crate::{Key, NodeId, Value};
@@ -139,6 +140,7 @@ impl State {
     }
 
     pub fn should_accept_view_change(&self, view_change: &ViewChange) -> bool {
+
         // make sure the view change is for the next view
         if view_change.new_view != self.view + 1 {
             return false;
@@ -147,7 +149,6 @@ impl State {
         if self.get_leader_for_view(view_change.new_view) != self.id {
             return false;
         }
-
 
         true
     }
@@ -162,7 +163,6 @@ impl State {
         request: &ClientRequest,
         commit: &Commit,
     ) -> (Option<Option<&Value>>, Vec<Commit>) {
-        
         self.last_seq_num_committed = commit.seq_num;
         self.message_bank
             .accepted_commits_not_applied
@@ -206,6 +206,9 @@ impl State {
             .checkpoint_votes
             .get(&(*seq_num, state_digest.to_vec()))
             .unwrap();
+        
+        // create a new checkpoint proof with only the checkpoints
+        // from nodes who voted for this new checkpoint
         for node_id in curr_vote_set.iter() {
             self.last_checkpoint_proof
                 .push(self.checkpoints_current_round.get(node_id).unwrap().clone());

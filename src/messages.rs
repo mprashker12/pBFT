@@ -38,7 +38,7 @@ impl Message {
             Message::ViewChangeMessage(view_change) => Some(view_change.id),
             Message::CheckPointMessage(check_point) => Some(check_point.id),
             Message::ClientResponseMessage(client_response) => Some(client_response.id),
-            Message::NewViewMessage(new_view) => {Some(new_view.id)},
+            Message::NewViewMessage(new_view) => Some(new_view.id),
             Message::ClientRequestMessage(_) => {
                 // client request messages are not sent from nodes
                 // so they have no associated ids
@@ -56,6 +56,8 @@ impl Message {
             Message::PrePrepareMessage(pre_prepare) => pre_prepare.is_properly_signed_by(pub_key),
             Message::PrepareMessage(prepare) => prepare.is_properly_signed_by(pub_key),
             Message::CommitMessage(commit) => commit.is_properly_signed_by(pub_key),
+            Message::CheckPointMessage(checkpoint) => checkpoint.is_properly_signed_by(pub_key),
+            Message::ViewChangeMessage(view_change) => view_change.is_properly_signed_by(pub_key),
             _ => true,
         }
     }
@@ -278,8 +280,14 @@ impl CheckPoint {
         state: HashMap<Key, Value>,
         checkpoint_commits: Vec<(Commit, ClientRequest)>,
     ) -> Self {
-        //todo make a signature
-        let mut signature = Vec::new();
+
+        let key_pair = Keypair::from_bytes(key_pair_bytes.as_slice()).unwrap();
+        let mut pre_hashed = Sha512::new();
+        pre_hashed.update(b"Checkpoint");
+        pre_hashed.update(committed_seq_num.to_le_bytes());
+        pre_hashed.update(state_digest.clone());
+
+        let signature = key_pair.sign_prehashed(pre_hashed, None).unwrap();
 
         Self {
             id,
@@ -287,8 +295,21 @@ impl CheckPoint {
             state_digest,
             state,
             checkpoint_commits,
-            signature,
+            signature: signature.to_bytes().to_vec(),
         }
+    }
+
+    pub fn is_properly_signed_by(&self, pub_key: &PublicKey) -> bool {
+        let mut pre_hashed = Sha512::new();
+        pre_hashed.update(b"Checkpoint");
+        pre_hashed.update(self.committed_seq_num.to_le_bytes());
+        pre_hashed.update(self.state_digest.clone());
+
+        let signature = Signature::from_bytes(self.signature.as_slice()).unwrap();
+
+        pub_key
+            .verify_prehashed(pre_hashed, None, &signature)
+            .is_ok()
     }
 }
 
@@ -322,12 +343,18 @@ impl ViewChange {
             signature,
         }
     }
+
+    pub fn is_properly_signed_by(&self, pub_key: &PublicKey) -> bool {true}
+
+   
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewView {
     id: NodeId,
 }
+
+impl NewView {}
 
 // The following message are not consensus messages and are sent to and from the client
 

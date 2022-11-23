@@ -22,25 +22,23 @@ async fn main() -> std::io::Result<()> {
     let send_fut = tokio::spawn(async move {
         let message: Message = Message::ClientRequestMessage(ClientRequest {
             respond_addr: me_addr,
-            time_stamp: 0,
+            time_stamp: 10,
             key: String::from("def"),
             value: Some(3),
         });
         broadcast_message(&addrs, message).await;
 
-        
         let message: Message = Message::ClientRequestMessage(ClientRequest {
             respond_addr: me_addr,
-            time_stamp: 1,
+            time_stamp: 11,
             key: String::from("def"),
             value: Some(4),
         });
         broadcast_message(&addrs, message).await;
 
-        
         let message: Message = Message::ClientRequestMessage(ClientRequest {
             respond_addr: me_addr,
-            time_stamp: 2,
+            time_stamp: 12,
             key: String::from("def"),
             value: None,
         });

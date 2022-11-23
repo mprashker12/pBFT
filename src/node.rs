@@ -190,7 +190,7 @@ impl InnerNode {
 
     pub async fn should_drop(&self, message: &Message) -> bool {
         if let Message::ClientRequestMessage(_) = message {
-            // we consider client requests to always be properly signed
+            // we should never drop client request messages
             return false;
         }
 

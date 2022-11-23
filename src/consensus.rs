@@ -132,9 +132,11 @@ impl Consensus {
                         }
 
                         Message::NewViewMessage(new_view) => {
-
                             if self.state.should_accept_new_view(&new_view) {
-                                let _ = self.tx_consensus.send(ConsensusCommand::AcceptNewView(new_view)).await;
+                                let _ = self
+                                    .tx_consensus
+                                    .send(ConsensusCommand::AcceptNewView(new_view))
+                                    .await;
                             }
                         }
 
@@ -185,6 +187,11 @@ impl Consensus {
                     // which, if it expires and the request is still outstanding,
                     // will initiate the view change protocol
 
+                    if self.state.message_bank.sent_requests.contains(&request) {
+                        continue;
+                    }
+
+                    self.state.message_bank.sent_requests.insert(request.clone());
                     let leader = self.state.current_leader();
                     let leader_addr = self.config.peer_addrs.get(&leader).unwrap();
                     let _ = self
@@ -239,10 +246,12 @@ impl Consensus {
                             .await;
                     });
 
-
                     let pre_prepare_message = Message::PrePrepareMessage(pre_prepare.clone());
 
-                    self.state.message_bank.sent_requests.insert(request.clone());
+                    self.state
+                        .message_bank
+                        .sent_requests
+                        .insert(request.clone());
                     let _ = self
                         .tx_node
                         .send(NodeCommand::BroadCastMessageCommand(BroadCastMessage {
@@ -307,11 +316,6 @@ impl Consensus {
                         }))
                         .await;
 
-                    self.state
-                        .message_bank
-                        .log
-                        .push_back(Message::PrePrepareMessage(pre_prepare.clone()));
-
                     // we may already have a got a prepare message which we did not accept because
                     // we did not receive this pre-prepare message message yet
                     for e_prepare in self.state.message_bank.outstanding_prepares.iter() {
@@ -351,13 +355,6 @@ impl Consensus {
                         .message_bank
                         .outstanding_prepares
                         .remove(&prepare);
-
-
-                    // add the prepare message we are accepting to the log
-                    self.state
-                        .message_bank
-                        .log
-                        .push_back(Message::PrepareMessage(prepare.clone()));
 
                     // TODO: Move the prepare votes into the state struct
                     // Count votes for this prepare message and see if we have enough to move to the commit phases
@@ -425,11 +422,6 @@ impl Consensus {
 
                     self.state.message_bank.outstanding_commits.remove(&commit);
 
-                    self.state
-                        .message_bank
-                        .log
-                        .push_back(Message::CommitMessage(commit.clone()));
-
                     if let Some(curr_vote_set) = self
                         .state
                         .commit_votes
@@ -476,7 +468,14 @@ impl Consensus {
                             if vote_set.len() > 2 * self.config.num_faulty {
                                 subsequent_prepares.insert(
                                     *seq_num,
-                                    (pre_prepare.clone(), vote_set.clone().into_iter().map(|(_, prepare)| prepare).collect())
+                                    (
+                                        pre_prepare.clone(),
+                                        vote_set
+                                            .clone()
+                                            .into_iter()
+                                            .map(|(_, prepare)| prepare)
+                                            .collect(),
+                                    ),
                                 );
                             }
                         }
@@ -504,17 +503,21 @@ impl Consensus {
                     // update the vote count
                     // if there are enough votes (and we are the primary for the next view)
                     // then we broadcast a corresponding new_view message
-                    self.state.view_change_votes.insert(view_change.id, view_change.clone());
-                    if self.state.view_change_votes.len() > 2*self.config.num_faulty {
+                    self.state
+                        .view_change_votes
+                        .insert(view_change.id, view_change.clone());
+                    if self.state.view_change_votes.len() > 2 * self.config.num_faulty {
                         // broadcast a new view message
-
                     }
                 }
 
                 ConsensusCommand::AcceptNewView(new_view) => {
                     // this is where we actually update the view
-                    //self.state.view = 
+                    //self.state.view =
                     info!("Moving to new view... ");
+
+                    self.state.in_view_change = false;
+                    self.state.checkpoint_votes.clear();
                 }
 
                 ConsensusCommand::ApplyCommit(commit) => {
@@ -541,11 +544,6 @@ impl Consensus {
                 }
 
                 ConsensusCommand::AcceptCheckpoint(checkpoint) => {
-                    self.state
-                        .message_bank
-                        .log
-                        .push_back(Message::CheckPointMessage(checkpoint.clone()));
-
                     self.state.message_bank.checkpoint_messages.insert(
                         (
                             checkpoint.committed_seq_num,
