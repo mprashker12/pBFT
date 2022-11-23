@@ -49,7 +49,7 @@ pub struct InnerNode {
     pub peer_pub_keys: Arc<Mutex<HashMap<NodeId, PublicKey>>>,
     /// Send Consensus Commands to Consensus engine
     pub tx_consensus: Sender<ConsensusCommand>,
-    /// Send Node Commands to itself 
+    /// Send Node Commands to itself
     pub tx_node: Sender<NodeCommand>,
 }
 

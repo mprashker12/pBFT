@@ -1,19 +1,21 @@
 use crate::config::Config;
 use crate::message_bank::MessageBank;
 use crate::messages::{
-    CheckPoint, ClientRequest, ClientResponse, Commit, Message, PrePrepare, Prepare, ViewChange
+    CheckPoint, ClientRequest, ClientResponse, Commit, Message, PrePrepare, Prepare, ViewChange, NewView,
 };
+use crate::node::Node;
 use crate::{Key, NodeId, Value};
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use ed25519_dalek::{Digest, Sha512};
 
-
 #[derive(Default)]
 pub struct State {
-    /// Configuration data of the cluster this node is in. 
+    /// Configuration data of the cluster this node is in.
     pub config: Config,
+    /// Id of the node which maintains this state
+    pub id: NodeId,
     /// Has this node issued a view-change message which has not been resolved
     pub in_view_change: bool,
     /// Current view we are in
@@ -26,7 +28,7 @@ pub struct State {
     pub last_seq_num_committed: usize,
     /// Maps (view, seq_num) to Ids of nodes who we
     /// have accepted prepare messages from for the associated transaction
-    pub prepare_votes: HashMap<(usize, usize), HashSet<NodeId>>,
+    pub prepare_votes: HashMap<(usize, usize), HashMap<NodeId, Prepare>>,
     /// Maps (view, seq_num) to Ids of nodes who we
     /// have accepted prepare messages from for the associated transaction
     pub commit_votes: HashMap<(usize, usize), HashSet<NodeId>>,
@@ -37,11 +39,12 @@ pub struct State {
     /// since the last stable checkpoint
     /// Note that this is reset every time we hit a new checkpoint
     pub checkpoints_current_round: HashMap<usize, CheckPoint>,
-    /// This consists of 2f + 1 checkpoint messages which were used to 
+    /// This consists of 2f + 1 checkpoint messages which were used to
     /// move to the current stable checkpoint
     /// This is used for subsequent view change messages
     pub last_checkpoint_proof: Vec<CheckPoint>,
     /// Maps node Ids to view change messages we have received for the subsequent view
+    /// Note that we only ever maintain <= 1 view_change message from any given node
     pub view_change_votes: HashMap<NodeId, ViewChange>,
     /// Structure storing all messages, including log
     pub message_bank: MessageBank,
@@ -49,9 +52,12 @@ pub struct State {
     pub store: HashMap<Key, Value>,
 }
 impl State {
-
     pub fn current_leader(&self) -> NodeId {
-        self.view % self.config.num_nodes
+        self.get_leader_for_view(self.view)
+    }
+
+    pub fn get_leader_for_view(&self, view: usize) -> NodeId {
+        view % self.config.num_nodes
     }
 
     pub fn should_accept_pre_prepare(&self, pre_prepare: &PrePrepare) -> bool {
@@ -120,8 +126,9 @@ impl State {
         if self.in_view_change {
             return false;
         }
-        // todo: look at the timestamp of the request and make sure it is at least as large as the last committed time stamp
-        // sent to that client
+        // maintain timestamp of last request we applied to our state from the client
+        // if the timestamp is too small, then we do not accept the message
+
         true
     }
 
@@ -132,7 +139,21 @@ impl State {
     }
 
     pub fn should_accept_view_change(&self, view_change: &ViewChange) -> bool {
-        // make sure the view change is well formed and the iew change is v + 1
+        // make sure the view change is for the next view
+        if view_change.new_view != self.view + 1 {
+            return false;
+        }
+        // if we are not the leader for the next view, then we don't accept the view change
+        if self.get_leader_for_view(view_change.new_view) != self.id {
+            return false;
+        }
+
+
+        true
+    }
+
+    pub fn should_accept_new_view(&self, _new_view: &NewView) -> bool {
+        // as long as the new view message is well formed, we should always accept it
         true
     }
 
@@ -141,7 +162,7 @@ impl State {
         request: &ClientRequest,
         commit: &Commit,
     ) -> (Option<Option<&Value>>, Vec<Commit>) {
-        // todo - get the request from the commit view and seq num
+        
         self.last_seq_num_committed = commit.seq_num;
         self.message_bank
             .accepted_commits_not_applied
@@ -181,14 +202,17 @@ impl State {
     pub fn update_checkpoint_meta(&mut self, seq_num: &usize, state_digest: &[u8]) {
         self.last_checkpoint_proof.clear();
 
-        let curr_vote_set = self.checkpoint_votes.get(&(*seq_num, state_digest.to_vec())).unwrap();
+        let curr_vote_set = self
+            .checkpoint_votes
+            .get(&(*seq_num, state_digest.to_vec()))
+            .unwrap();
         for node_id in curr_vote_set.iter() {
-            self.last_checkpoint_proof.push(self.checkpoints_current_round.get(node_id).unwrap().clone());
+            self.last_checkpoint_proof
+                .push(self.checkpoints_current_round.get(node_id).unwrap().clone());
         }
 
         self.checkpoint_votes.clear();
         self.checkpoints_current_round.clear();
-
     }
 
     pub fn garbage_collect(&mut self) {

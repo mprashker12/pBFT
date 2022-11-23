@@ -16,6 +16,7 @@ pub enum Message {
     PrepareMessage(Prepare),
     CommitMessage(Commit),
     ViewChangeMessage(ViewChange),
+    NewViewMessage(NewView),
     CheckPointMessage(CheckPoint),
     ClientRequestMessage(ClientRequest),
     ClientResponseMessage(ClientResponse),
@@ -37,6 +38,7 @@ impl Message {
             Message::ViewChangeMessage(view_change) => Some(view_change.id),
             Message::CheckPointMessage(check_point) => Some(check_point.id),
             Message::ClientResponseMessage(client_response) => Some(client_response.id),
+            Message::NewViewMessage(new_view) => {Some(new_view.id)},
             Message::ClientRequestMessage(_) => {
                 // client request messages are not sent from nodes
                 // so they have no associated ids
@@ -296,14 +298,38 @@ pub struct ViewChange {
     pub new_view: usize,
     pub last_stable_seq_num: usize,
     pub checkpoint_proof: Vec<CheckPoint>,
-    pub subsequent_pre_prepares: HashMap<usize, PrePrepare>,
-    pub subsequent_prepares: HashMap<usize, Prepare>,
+    pub subsequent_prepares: HashMap<usize, (PrePrepare, Vec<Prepare>)>,
     pub signature: Vec<u8>,
 }
 
 impl ViewChange {
-    
+    pub fn new_with_signature(
+        key_pair_bytes: Vec<u8>,
+        id: NodeId,
+        new_view: usize,
+        last_stable_seq_num: usize,
+        checkpoint_proof: Vec<CheckPoint>,
+        subsequent_prepares: HashMap<usize, (PrePrepare, Vec<Prepare>)>,
+    ) -> ViewChange {
+        let mut signature = Vec::new();
+
+        ViewChange {
+            id,
+            new_view,
+            last_stable_seq_num,
+            checkpoint_proof,
+            subsequent_prepares,
+            signature,
+        }
+    }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewView {
+    id: NodeId,
+}
+
+// The following message are not consensus messages and are sent to and from the client
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ClientRequest {
@@ -393,6 +419,7 @@ pub enum ConsensusCommand {
     AcceptCommit(Commit),
     InitViewChange(ClientRequest),
     AcceptViewChange(ViewChange),
+    AcceptNewView(NewView),
     ApplyCommit(Commit),
     AcceptCheckpoint(CheckPoint),
 }

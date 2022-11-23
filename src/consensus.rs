@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::messages::{
     BroadCastMessage, CheckPoint, ClientRequest, ClientResponse, Commit, ConsensusCommand, Message,
-    NodeCommand, PrePrepare, Prepare, SendMessage,
+    NodeCommand, PrePrepare, Prepare, SendMessage, ViewChange,
 };
 use crate::state::State;
 use crate::view_changer::{self, ViewChanger};
@@ -9,7 +9,7 @@ use crate::NodeId;
 
 use tokio::sync::mpsc::{Receiver, Sender};
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use log::{debug, error, info, log_enabled, Level};
@@ -47,6 +47,7 @@ impl Consensus {
     ) -> Self {
         let state = State {
             config: config.clone(),
+            id,
             ..Default::default()
         };
 
@@ -79,6 +80,7 @@ impl Consensus {
                 ConsensusCommand::ProcessMessage(message) => {
                     match message.clone() {
                         Message::IdentifierMessage(_) => {
+                            // Identifier messages are not passed to the consensus engine
                             unreachable!()
                         }
 
@@ -122,9 +124,20 @@ impl Consensus {
 
                         Message::ViewChangeMessage(view_change) => {
                             if self.state.should_accept_view_change(&view_change) {
-                                let _ = self.tx_consensus.send(ConsensusCommand::AcceptViewChange(view_change)).await;
+                                let _ = self
+                                    .tx_consensus
+                                    .send(ConsensusCommand::AcceptViewChange(view_change))
+                                    .await;
                             }
                         }
+
+                        Message::NewViewMessage(new_view) => {
+
+                            if self.state.should_accept_new_view(&new_view) {
+                                let _ = self.tx_consensus.send(ConsensusCommand::AcceptNewView(new_view)).await;
+                            }
+                        }
+
                         Message::CheckPointMessage(checkpoint) => {
                             info!("Saw checkpoint from {}", checkpoint.id);
 
@@ -160,8 +173,8 @@ impl Consensus {
                         }
 
                         Message::ClientResponseMessage(_) => {
-                            // we should never receive a client response message
-                            unreachable!()
+                            // we should never receive a client response message, so we ignore
+                            continue;
                         }
                     }
                 }
@@ -196,6 +209,16 @@ impl Consensus {
                     // Here we are primary and received a client request which we deemed valid
                     // so we broadcast a Pre_prepare Message to the network and assign
                     // the next sequence number to this request
+                    if self.state.message_bank.sent_requests.contains(&request) {
+                        // we already broadcasted this request to the network
+                        // (we potentially received the same request many times from the client,
+                        // or we received many misdirected request message from other nodes),
+                        // so we ignore the request
+                        // (Note that the client timestamps requests, so we will still process the same request
+                        // if the client actually issues it more than once)
+                        continue;
+                    }
+
                     self.state.seq_num += 1;
 
                     let pre_prepare = PrePrepare::new_with_signature(
@@ -216,8 +239,10 @@ impl Consensus {
                             .await;
                     });
 
+
                     let pre_prepare_message = Message::PrePrepareMessage(pre_prepare.clone());
 
+                    self.state.message_bank.sent_requests.insert(request.clone());
                     let _ = self
                         .tx_node
                         .send(NodeCommand::BroadCastMessageCommand(BroadCastMessage {
@@ -320,12 +345,13 @@ impl Consensus {
 
                     info!("Accepted Prepare from {}", prepare.id);
 
-                    // we are not accepting this prepare, so if it is our outstanding set, then
-                    //we may remove it
+                    // we are now accepting this prepare, so if it is our outstanding set, then
+                    // we may remove it
                     self.state
                         .message_bank
                         .outstanding_prepares
                         .remove(&prepare);
+
 
                     // add the prepare message we are accepting to the log
                     self.state
@@ -340,7 +366,7 @@ impl Consensus {
                         .prepare_votes
                         .get_mut(&(prepare.view, prepare.seq_num))
                     {
-                        curr_vote_set.insert(prepare.id);
+                        curr_vote_set.insert(prepare.id, prepare.clone());
                         if curr_vote_set.len() > 2 * self.config.num_faulty {
                             // at this point, we have enough prepare votes to move into the commit phase.
                             let _ = self
@@ -351,8 +377,8 @@ impl Consensus {
                         }
                     } else {
                         // first time we got a prepare message for this view and sequence number
-                        let mut new_vote_set = HashSet::new();
-                        new_vote_set.insert(prepare.id);
+                        let mut new_vote_set = HashMap::<usize, Prepare>::new();
+                        new_vote_set.insert(prepare.id, prepare.clone());
                         self.state
                             .prepare_votes
                             .insert((prepare.view, prepare.seq_num), new_vote_set);
@@ -435,14 +461,60 @@ impl Consensus {
                     info!("Initializing view change...");
                     self.state.in_view_change = true;
 
-                    // construct the view change object
+                    // find all pre-prepares that we have at least 2f + 1 votes for that occurred after the last stable seq-num
 
+                    let mut subsequent_prepares =
+                        HashMap::<usize, (PrePrepare, Vec<Prepare>)>::new();
+                    for ((view, seq_num), pre_prepare) in
+                        self.state.message_bank.accepted_pre_prepare_requests.iter()
+                    {
+                        if *seq_num <= self.state.last_stable_seq_num {
+                            // only consider requests with seq_num which come after the last stable seq-num
+                            continue;
+                        }
+                        if let Some(vote_set) = self.state.prepare_votes.get(&(*view, *seq_num)) {
+                            if vote_set.len() > 2 * self.config.num_faulty {
+                                subsequent_prepares.insert(
+                                    *seq_num,
+                                    (pre_prepare.clone(), vote_set.clone().into_iter().map(|(_, prepare)| prepare).collect())
+                                );
+                            }
+                        }
+                    }
+
+                    // construct the view change object
+                    let view_change = ViewChange::new_with_signature(
+                        self.keypair_bytes.clone(),
+                        self.id,
+                        self.state.view + 1,
+                        self.state.last_stable_seq_num,
+                        self.state.last_checkpoint_proof.clone(),
+                        subsequent_prepares,
+                    );
+
+                    let _ = self
+                        .tx_node
+                        .send(NodeCommand::BroadCastMessageCommand(BroadCastMessage {
+                            message: Message::ViewChangeMessage(view_change),
+                        }))
+                        .await;
                 }
 
                 ConsensusCommand::AcceptViewChange(view_change) => {
-                    // update the vote count.
+                    // update the vote count
                     // if there are enough votes (and we are the primary for the next view)
                     // then we broadcast a corresponding new_view message
+                    self.state.view_change_votes.insert(view_change.id, view_change.clone());
+                    if self.state.view_change_votes.len() > 2*self.config.num_faulty {
+                        // broadcast a new view message
+
+                    }
+                }
+
+                ConsensusCommand::AcceptNewView(new_view) => {
+                    // this is where we actually update the view
+                    //self.state.view = 
+                    info!("Moving to new view... ");
                 }
 
                 ConsensusCommand::ApplyCommit(commit) => {
@@ -482,7 +554,9 @@ impl Consensus {
                         checkpoint.clone(),
                     );
 
-                    self.state.checkpoints_current_round.insert(checkpoint.id, checkpoint.clone());
+                    self.state
+                        .checkpoints_current_round
+                        .insert(checkpoint.id, checkpoint.clone());
 
                     // increment vote count for checkpoint with given committed seq num and given digest
                     if let Some(curr_vote_set) = self.state.checkpoint_votes.get_mut(&(
@@ -493,24 +567,27 @@ impl Consensus {
                         if curr_vote_set.len() > 2 * self.config.num_faulty {
                             // At this point, we have enough checkpoint messages to update out state
                             info!("Updating state from checkpoint");
-                            
+
                             for (commit, client_request) in checkpoint.checkpoint_commits.iter() {
                                 self.apply_commit(commit, client_request).await;
                             }
 
                             if self.state.last_seq_num_committed < checkpoint.committed_seq_num {
-                                // if this node is still behind after applying all commits in the checkpoint, 
+                                // if this node is still behind after applying all commits in the checkpoint,
                                 // we fast-forward its state, but note that no client responses are sent.
                                 self.state.store = checkpoint.state;
                                 self.state.last_seq_num_committed = checkpoint.committed_seq_num;
                             }
-                            
-                            // make a new proof of this checkpoint for subsequent view change messages
-                            self.state.update_checkpoint_meta(&checkpoint.committed_seq_num, &checkpoint.state_digest.clone());
 
-                            // update the stable seq num and garbage collect up to this seq num
+                            // make a new proof of this checkpoint for subsequent view change messages
+                            self.state.update_checkpoint_meta(
+                                &checkpoint.committed_seq_num,
+                                &checkpoint.state_digest.clone(),
+                            );
+
+                            // update the stable seq num
                             self.state.last_stable_seq_num = checkpoint.committed_seq_num;
-                            
+
                             // remove all of the messages pertaining to requests with seq_num < last_stable_seq_num
                             self.state.garbage_collect();
                         }

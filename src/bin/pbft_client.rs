@@ -12,35 +12,46 @@ async fn main() -> std::io::Result<()> {
     let me_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8079);
     let listener = TcpListener::bind(me_addr.clone()).await.unwrap();
 
-    let mut node_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8060);
+    let mut replica_addr0 = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8060);
+    let mut replica_addr1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8061);
+    let mut replica_addr2 = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8062);
+    let mut replica_addr3 = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8063);
+
+    let addrs = vec![replica_addr0, replica_addr1, replica_addr2, replica_addr3];
 
     let send_fut = tokio::spawn(async move {
-        let mut node_stream = TcpStream::connect(node_addr).await.unwrap();
         let message: Message = Message::ClientRequestMessage(ClientRequest {
             respond_addr: me_addr,
             time_stamp: 0,
             key: String::from("def"),
             value: Some(3),
         });
-        let _bytes_written = node_stream.write(message.serialize().as_slice()).await;
+        broadcast_message(&addrs, message).await;
 
-        let mut node_stream = TcpStream::connect(node_addr).await.unwrap();
+        
         let message: Message = Message::ClientRequestMessage(ClientRequest {
             respond_addr: me_addr,
             time_stamp: 1,
             key: String::from("def"),
             value: Some(4),
         });
-        let _bytes_written = node_stream.write(message.serialize().as_slice()).await;
+        broadcast_message(&addrs, message).await;
 
-        let mut node_stream = TcpStream::connect(node_addr).await.unwrap();
+        
         let message: Message = Message::ClientRequestMessage(ClientRequest {
             respond_addr: me_addr,
             time_stamp: 2,
             key: String::from("def"),
             value: None,
         });
-        let _bytes_written = node_stream.write(message.serialize().as_slice()).await;
+        broadcast_message(&addrs, message).await;
+        let message: Message = Message::ClientRequestMessage(ClientRequest {
+            respond_addr: me_addr,
+            time_stamp: 3,
+            key: String::from("def"),
+            value: None,
+        });
+        broadcast_message(&addrs, message).await;
     });
 
     let recv_fut = tokio::spawn(async move {
@@ -62,6 +73,15 @@ async fn main() -> std::io::Result<()> {
     recv_fut.await?;
 
     Ok(())
+}
+
+async fn broadcast_message(addrs: &[SocketAddr], message: Message) {
+    for addr in addrs.iter() {
+        let node_stream = TcpStream::connect(addr).await;
+        if let Ok(mut stream) = node_stream {
+            let _bytes_written = stream.write(message.serialize().as_slice()).await;
+        }
+    }
 }
 
 async fn read_response(mut stream: TcpStream) -> std::io::Result<()> {

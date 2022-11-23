@@ -16,4 +16,3 @@ pub mod view_changer;
 pub use sha2::{Digest, Sha256};
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
-
