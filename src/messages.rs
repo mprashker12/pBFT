@@ -351,13 +351,25 @@ impl ViewChange {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewView {
-    id: NodeId,
+    pub id: NodeId,
+    pub view: usize,
+    pub view_change_messages: Vec<ViewChange>,
+    pub outstanding_prepares: Vec<PrePrepare>,
 }
 
 impl NewView {
-    pub fn new_with_signature(keypair_bytes: Vec<u8>, id: usize) -> Self {
+    pub fn new_with_signature(
+        keypair_bytes: Vec<u8>, 
+        id: usize, 
+        view: usize,
+        view_change_messages: Vec<ViewChange>,
+        outstanding_prepares: Vec<PrePrepare>
+    ) -> Self {
         Self {
-            id
+            id,
+            view,
+            view_change_messages,
+            outstanding_prepares,
         }
     }
 

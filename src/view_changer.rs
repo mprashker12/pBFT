@@ -20,7 +20,7 @@ pub struct ViewChanger {
     /// or we accept a pre-prepare message
     /// Used to initiate view changes
     pub wait_set: Arc<Mutex<HashSet<ClientRequest>>>,
-    /// Theaw are pre-prepares sent by the leader which we have not applied yet
+    /// These are pre-prepares sent by the leader which we have not applied yet
     /// If a certain amount of time expires and we have not yet applied it
     /// we re-broadcast the pre-prepare to the other peers
     /// Pre-prepares are indexed by (view, seq_num)
@@ -76,5 +76,13 @@ impl ViewChanger {
                 .send(ConsensusCommand::InitViewChange(request.clone()))
                 .await;
         }
+    }
+
+    pub fn reset(&mut self) {
+        let mut wait_set = self.wait_set.lock().unwrap();
+        wait_set.clear();
+
+        let mut sent_pre_prepares = self.sent_pre_prepares.lock().unwrap();
+        sent_pre_prepares.clear();
     }
 }

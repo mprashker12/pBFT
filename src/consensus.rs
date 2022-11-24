@@ -503,7 +503,23 @@ impl Consensus {
                     if self.state.view_change_votes.len() > 2 * self.config.num_faulty {
                         // broadcast a new view message
                         info!("Broadcasting new view");
-                        let new_view = NewView::new_with_signature(self.keypair_bytes.clone(), self.id);
+                        
+                        
+                        let mut view_change_messages = Vec::<ViewChange>::new();
+                        for (_, view_change) in self.state.view_change_votes.iter() {
+                            view_change_messages.push(view_change.clone());
+                        }
+
+                        let mut outstanding_pre_prepares = Vec::<PrePrepare>::new();
+                        // TODO: populate this 
+                        
+                        let new_view = NewView::new_with_signature(
+                            self.keypair_bytes.clone(), 
+                            self.id,
+                            view_change.new_view,
+                            view_change_messages,
+                            outstanding_pre_prepares
+                        );
                         let _ = self.tx_node.send(NodeCommand::BroadCastMessageCommand(BroadCastMessage {
                             message: Message::NewViewMessage(new_view)
                         })).await;
@@ -511,12 +527,15 @@ impl Consensus {
                 }
 
                 ConsensusCommand::AcceptNewView(new_view) => {
-                    // this is where we actually update the view
-                    //self.state.view =
-                    info!("Moving to new view... ");
+                    
+                    info!("Moving to view {}", new_view.view);
 
+                    //self.state.in_view_change = false;
+                    //self.state.checkpoint_votes.clear();
+                    
                     self.state.in_view_change = false;
-                    self.state.checkpoint_votes.clear();
+                    self.view_changer.reset();
+                    self.state.view = new_view.view;
                 }
 
                 ConsensusCommand::ApplyCommit(commit) => {
@@ -584,6 +603,23 @@ impl Consensus {
 
                             // update the stable seq num
                             self.state.last_stable_seq_num = checkpoint.committed_seq_num;
+
+                            // we update the view to the largest sequence number in the commits
+                            // in the checkpoint
+                            let mut new_view = self.state.view;
+                            for (commit, _) in checkpoint.checkpoint_commits.iter() {
+                                new_view = std::cmp::max(new_view, commit.view);
+                            }
+                            
+                            if new_view != self.state.view {
+                                // if we update to a new view, 
+                                // then we need to reset any view change processes
+                                // which we initiated
+                                self.state.in_view_change = false;
+                                self.view_changer.reset();
+                            }
+
+                            self.state.view = new_view;
 
                             // remove all of the messages pertaining to requests with seq_num < last_stable_seq_num
                             self.state.garbage_collect();
