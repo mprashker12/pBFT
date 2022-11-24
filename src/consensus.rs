@@ -85,7 +85,7 @@ impl Consensus {
                         }
 
                         Message::PrePrepareMessage(pre_prepare) => {
-                            info!("Saw preprepare from {}", pre_prepare.id);
+                            //info!("Saw preprepare from {}", pre_prepare.id);
                             if self.state.should_accept_pre_prepare(&pre_prepare) {
                                 let _ = self
                                     .tx_consensus
@@ -94,7 +94,7 @@ impl Consensus {
                             }
                         }
                         Message::PrepareMessage(prepare) => {
-                            info!("Saw prepare from {}", prepare.id);
+                            //info!("Saw prepare from {}", prepare.id);
                             if self.state.should_accept_prepare(&prepare) {
                                 let _ = self
                                     .tx_consensus
@@ -108,7 +108,7 @@ impl Consensus {
                             }
                         }
                         Message::CommitMessage(commit) => {
-                            info!("Saw commit from {}", commit.id);
+                            //info!("Saw commit from {}", commit.id);
                             if self.state.should_accept_commit(&commit) {
                                 let _ = self
                                     .tx_consensus
@@ -545,6 +545,8 @@ impl Consensus {
                             max_seq_num = std::cmp::max(max_seq_num, *seq_num);
                         }
                     }
+                    self.state.seq_num = latest_stable_seq_num;
+                    // issue new pre-preprepares here
                     info!("Moving to view {} {} {}", new_view.view, latest_stable_seq_num, max_seq_num);
                     self.state.seq_num = max_seq_num;
                     // for each seq num between latest stable and max_seq_num, we issue new pre-prepare messages
