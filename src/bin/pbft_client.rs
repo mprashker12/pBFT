@@ -2,6 +2,7 @@ use pbft::messages::{ClientRequest, Message};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufStream};
 use tokio::{net::TcpListener, net::TcpStream};
+use tokio::time::sleep;
 
 use serde_json;
 
@@ -20,36 +21,46 @@ async fn main() -> std::io::Result<()> {
     let addrs = vec![replica_addr0, replica_addr1, replica_addr2, replica_addr3];
 
     let send_fut = tokio::spawn(async move {
-        let message: Message = Message::ClientRequestMessage(ClientRequest {
-            respond_addr: me_addr,
-            time_stamp: 117,
-            key: String::from("def"),
-            value: Some(3),
-        });
-        broadcast_message(&addrs, message).await;
+        let mut timestamp = 0;
+        loop {
+            timestamp += 1;
+            let message: Message = Message::ClientRequestMessage(ClientRequest {
+                respond_addr: me_addr,
+                time_stamp: timestamp,
+                key: String::from("def"),
+                value: Some(3),
+            });
+            broadcast_message(&addrs, message).await;
 
-        let message: Message = Message::ClientRequestMessage(ClientRequest {
-            respond_addr: me_addr,
-            time_stamp: 118,
-            key: String::from("def"),
-            value: Some(4),
-        });
-        broadcast_message(&addrs, message).await;
+            timestamp += 1;
+            let message: Message = Message::ClientRequestMessage(ClientRequest {
+                respond_addr: me_addr,
+                time_stamp: timestamp,
+                key: String::from("def"),
+                value: Some(4),
+            });
+            broadcast_message(&addrs, message).await;
 
-        let message: Message = Message::ClientRequestMessage(ClientRequest {
-            respond_addr: me_addr,
-            time_stamp: 119,
-            key: String::from("def"),
-            value: None,
-        });
-        broadcast_message(&addrs, message).await;
-        let message: Message = Message::ClientRequestMessage(ClientRequest {
-            respond_addr: me_addr,
-            time_stamp: 120,
-            key: String::from("def"),
-            value: None,
-        });
-        broadcast_message(&addrs, message).await;
+            timestamp += 1;
+            let message: Message = Message::ClientRequestMessage(ClientRequest {
+                respond_addr: me_addr,
+                time_stamp: timestamp,
+                key: String::from("def"),
+                value: None,
+            });
+            broadcast_message(&addrs, message).await;
+            
+            timestamp += 1;
+            let message: Message = Message::ClientRequestMessage(ClientRequest {
+                respond_addr: me_addr,
+                time_stamp: timestamp,
+                key: String::from("def"),
+                value: None,
+            });
+            broadcast_message(&addrs, message).await;
+
+            sleep(std::time::Duration::from_secs(4)).await;
+    }
     });
 
     let recv_fut = tokio::spawn(async move {
