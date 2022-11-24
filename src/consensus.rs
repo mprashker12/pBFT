@@ -511,8 +511,8 @@ impl Consensus {
                         }
 
                         let mut outstanding_pre_prepares = Vec::<PrePrepare>::new();
-                        // TODO: populate this 
-                        
+                        //TODO: populate this
+
                         let new_view = NewView::new_with_signature(
                             self.keypair_bytes.clone(), 
                             self.id,
@@ -520,6 +520,23 @@ impl Consensus {
                             view_change_messages,
                             outstanding_pre_prepares
                         );
+
+
+                        let mut latest_stable_seq_num = self.state.last_stable_seq_num;
+                        let mut max_seq_num = self.state.last_stable_seq_num;
+                        for view_change in new_view.view_change_messages.iter() {
+                            latest_stable_seq_num = std::cmp::max(latest_stable_seq_num, view_change.last_stable_seq_num);
+                            for (seq_num, _) in view_change.subsequent_prepares.iter() {
+                                max_seq_num = std::cmp::max(max_seq_num, *seq_num);
+                            }
+                        }
+                        info!("Broadcasting new view {} {} {}", new_view.view, latest_stable_seq_num, max_seq_num);
+                       
+                        self.state.seq_num = latest_stable_seq_num;
+                        // TODO: Init pre-prepares here
+                        self.state.seq_num = max_seq_num;
+                        
+                        
                         let _ = self.tx_node.send(NodeCommand::BroadCastMessageCommand(BroadCastMessage {
                             message: Message::NewViewMessage(new_view)
                         })).await;
@@ -528,28 +545,18 @@ impl Consensus {
 
                 ConsensusCommand::AcceptNewView(new_view) => {
                     
-                    //info!("Moving to view {}", new_view.view);
 
                     //self.state.in_view_change = false;
                     //self.state.checkpoint_votes.clear();
+                    info!("Moving to view {}", new_view.view);
                     
                     self.state.in_view_change = false;
                     self.view_changer.reset();
                     self.state.view = new_view.view;
 
-                    let mut latest_stable_seq_num = self.state.last_stable_seq_num;
-                    let mut max_seq_num = self.state.last_stable_seq_num;
-                    for view_change in new_view.view_change_messages.iter() {
-                        latest_stable_seq_num = std::cmp::max(latest_stable_seq_num, view_change.last_stable_seq_num);
-                        for (seq_num, _) in view_change.subsequent_prepares.iter() {
-                            max_seq_num = std::cmp::max(max_seq_num, *seq_num);
-                        }
-                    }
-                    self.state.seq_num = latest_stable_seq_num;
+                  
                     
-                    // issue new pre-preprepares here
-                    info!("Moving to view {} {} {}", new_view.view, latest_stable_seq_num, max_seq_num);
-                    self.state.seq_num = max_seq_num;
+                    // issue prepares for each pre-prepare here
                     // for each seq num between latest stable and max_seq_num, we issue new pre-prepare messages
                 }
 
