@@ -412,7 +412,7 @@ impl Consensus {
                     // We received a Commit Message for a request that we deemed valid
                     // so we increment the vote count
 
-                    info!("Accepted commit from {}", commit.id);
+                    info!("Accepted commit from {} with view {} seq-num {}", commit.id, commit.view, commit.seq_num);
 
                     self.state.message_bank.outstanding_commits.remove(&commit);
 
@@ -536,18 +536,30 @@ impl Consensus {
                     self.state.in_view_change = false;
                     self.view_changer.reset();
                     self.state.view = new_view.view;
+
+                    let mut latest_stable_seq_num = self.state.last_stable_seq_num;
+                    let mut max_seq_num = self.state.last_stable_seq_num;
+                    for view_change in new_view.view_change_messages.iter() {
+                        latest_stable_seq_num = std::cmp::max(latest_stable_seq_num, view_change.last_stable_seq_num);
+                        for (seq_num, _) in view_change.subsequent_prepares.iter() {
+                            max_seq_num = std::cmp::max(max_seq_num, *seq_num);
+                        }
+                    }
+
+                    self.state.seq_num = latest_stable_seq_num;
+                    // for each seq num between latest stable and max_seq_num, we issue new pre-prepare messages
                 }
 
                 ConsensusCommand::ApplyCommit(commit) => {
                     // we now have permission to apply the client request
-                    let client_request = self
+                    let pre_prepare = self
                         .state
                         .message_bank
                         .accepted_pre_prepare_requests
-                        .get(&(commit.view, commit.seq_num))
-                        .unwrap()
-                        .clone()
-                        .client_request;
+                        .get(&(commit.view, commit.seq_num));
+                    
+                    if pre_prepare.is_none() {continue;}
+                    let client_request = pre_prepare.unwrap().clone().client_request;
 
                     self.apply_commit(&commit, &client_request).await;
                     info!("New state: {}", self.state.last_seq_num_committed);
@@ -584,9 +596,7 @@ impl Consensus {
                             // At this point, we have enough checkpoint messages to update out state
                             info!("Updating state from checkpoint");
 
-                            for (commit, client_request) in checkpoint.checkpoint_commits.iter() {
-                                self.apply_commit(commit, client_request).await;
-                            }
+                           
 
                             if self.state.last_seq_num_committed < checkpoint.committed_seq_num {
                                 // if this node is still behind after applying all commits in the checkpoint,
@@ -606,10 +616,7 @@ impl Consensus {
 
                             // we update the view to the largest sequence number in the commits
                             // in the checkpoint
-                            let mut new_view = self.state.view;
-                            for (commit, _) in checkpoint.checkpoint_commits.iter() {
-                                new_view = std::cmp::max(new_view, commit.view);
-                            }
+                            let new_view = checkpoint.view;
                             
                             if new_view != self.state.view {
                                 // if we update to a new view, 
@@ -646,7 +653,7 @@ impl Consensus {
             .remove_from_sent_pre_prepares(&(commit.view, commit.seq_num));
 
         if commit.seq_num == self.state.last_seq_num_committed + 1 {
-            info!("Applying client request with seq_num {}", commit.seq_num);
+            info!("Applying client request with view {} seq-num {}", commit.view, commit.seq_num);
 
             let (ret, new_applies) = self.state.apply_commit(client_request, commit);
             for commit in new_applies.iter() {
@@ -696,25 +703,14 @@ impl Consensus {
 
     pub async fn init_checkpoint(&mut self) {
         info!("Initiating checkpoint");
-        let mut checkpoint_commits = Vec::<(Commit, ClientRequest)>::new();
-        for seq_num in self.state.last_stable_seq_num + 1..self.state.last_seq_num_committed + 1 {
-            checkpoint_commits.push(
-                self.state
-                    .message_bank
-                    .applied_commits
-                    .get(&seq_num)
-                    .unwrap()
-                    .clone(),
-            );
-        }
-
+      
         let checkpoint = CheckPoint::new_with_signature(
             self.keypair_bytes.clone(),
             self.id,
             self.state.last_seq_num_committed,
+            self.state.view,
             self.state.digest(),
             self.state.store.clone(),
-            checkpoint_commits,
         );
 
         let _ = self

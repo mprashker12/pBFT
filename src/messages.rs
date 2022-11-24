@@ -265,9 +265,9 @@ impl Commit {
 pub struct CheckPoint {
     pub id: NodeId,
     pub committed_seq_num: usize,
+    pub view: usize,
     pub state_digest: Vec<u8>,
     pub state: HashMap<Key, Value>,
-    pub checkpoint_commits: Vec<(Commit, ClientRequest)>,
     pub signature: Vec<u8>,
 }
 
@@ -276,9 +276,9 @@ impl CheckPoint {
         key_pair_bytes: Vec<u8>,
         id: usize,
         committed_seq_num: usize,
+        view: usize,
         state_digest: Vec<u8>,
         state: HashMap<Key, Value>,
-        checkpoint_commits: Vec<(Commit, ClientRequest)>,
     ) -> Self {
 
         let key_pair = Keypair::from_bytes(key_pair_bytes.as_slice()).unwrap();
@@ -292,9 +292,9 @@ impl CheckPoint {
         Self {
             id,
             committed_seq_num,
+            view,
             state_digest,
             state,
-            checkpoint_commits,
             signature: signature.to_bytes().to_vec(),
         }
     }
