@@ -546,6 +546,7 @@ impl Consensus {
                         }
                     }
                     self.state.seq_num = latest_stable_seq_num;
+                    
                     // issue new pre-preprepares here
                     info!("Moving to view {} {} {}", new_view.view, latest_stable_seq_num, max_seq_num);
                     self.state.seq_num = max_seq_num;
@@ -599,7 +600,6 @@ impl Consensus {
                             info!("Updating state from checkpoint");
 
                            
-
                             if self.state.last_seq_num_committed < checkpoint.committed_seq_num {
                                 // if this node is still behind after applying all commits in the checkpoint,
                                 // we fast-forward its state, but note that no client responses are sent.
