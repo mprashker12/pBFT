@@ -528,7 +528,7 @@ impl Consensus {
 
                 ConsensusCommand::AcceptNewView(new_view) => {
                     
-                    info!("Moving to view {}", new_view.view);
+                    //info!("Moving to view {}", new_view.view);
 
                     //self.state.in_view_change = false;
                     //self.state.checkpoint_votes.clear();
@@ -545,8 +545,8 @@ impl Consensus {
                             max_seq_num = std::cmp::max(max_seq_num, *seq_num);
                         }
                     }
-
-                    self.state.seq_num = latest_stable_seq_num;
+                    info!("Moving to view {} {} {}", new_view.view, latest_stable_seq_num, max_seq_num);
+                    self.state.seq_num = max_seq_num;
                     // for each seq num between latest stable and max_seq_num, we issue new pre-prepare messages
                 }
 
