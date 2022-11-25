@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::net::SocketAddr;
+use std::net::{SocketAddr, IpAddr, Ipv4Addr};
 
 use serde::{Deserialize, Serialize};
 
@@ -399,6 +399,15 @@ impl ClientRequest {
         }
         let result: &[u8] = &hasher.finalize();
         result.to_vec()
+    }
+
+    pub fn no_op() -> Self {
+        ClientRequest {
+            respond_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0),
+            time_stamp: 0,
+            key: String::from(""),
+            value: None,
+        }
     }
 }
 

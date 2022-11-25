@@ -288,7 +288,7 @@ impl Consensus {
                 ConsensusCommand::AcceptPrePrepare(pre_prepare) => {
                     // We received a PrePrepare message from the network, and we see no violations
                     // So we will broadcast a corresponding prepare message and begin to count votes
-                    info!("Accepted PrePrepare from {}", pre_prepare.id);
+                    //info!("Accepted PrePrepare from {}", pre_prepare.id);
                     self.state
                         .message_bank
                         .accepted_pre_prepare_requests
@@ -341,7 +341,7 @@ impl Consensus {
                     // to we increment the vote count, and if we have enough prepare votes
                     // then we move to the commit phases
 
-                    info!("Accepted Prepare from {}", prepare.id);
+                    //info!("Accepted Prepare from {}", prepare.id);
 
                     // we are now accepting this prepare, so if it is our outstanding set, then
                     // we may remove it
@@ -510,32 +510,65 @@ impl Consensus {
                             view_change_messages.push(view_change.clone());
                         }
 
+                        let mut latest_stable_seq_num = self.state.last_stable_seq_num;
+                        let mut max_seq_num = self.state.last_stable_seq_num;
+                        for view_change in view_change_messages.iter() {
+                            latest_stable_seq_num = std::cmp::max(latest_stable_seq_num, view_change.last_stable_seq_num);
+                            for (seq_num, _) in view_change.subsequent_prepares.iter() {
+                                max_seq_num = std::cmp::max(max_seq_num, *seq_num);
+                            }
+                        }
+
                         let mut outstanding_pre_prepares = Vec::<PrePrepare>::new();
                         //TODO: populate this
+                        for seq_num in latest_stable_seq_num + 1..max_seq_num + 1 {
+                            let mut pre_prepare_highest_view_at_seq_num : Option<PrePrepare> = None;
+                            for view_change in view_change_messages.iter() {
+                                if let Some((pre_prepare, _)) = view_change.subsequent_prepares.get(&seq_num) {
+                                    if pre_prepare_highest_view_at_seq_num.clone().is_none() || pre_prepare.view > pre_prepare_highest_view_at_seq_num.clone().unwrap().view {
+                                        pre_prepare_highest_view_at_seq_num = Some(pre_prepare.clone());
+                                    }   
+                                }
+                            }
+
+                            let new_pre_prepare_for_view = if let Some(e_pre_prepare) = pre_prepare_highest_view_at_seq_num {
+                                    PrePrepare::new_with_signature(
+                                        self.keypair_bytes.clone(),
+                                        self.id,
+                                        self.state.view + 1,
+                                        seq_num,
+                                        &e_pre_prepare.client_request.clone()
+                                    )
+                            } else {
+                                // create a pre-prepare with a no-op request
+                                // to fill in gaps in sequence number
+                                PrePrepare::new_with_signature(
+                                    self.keypair_bytes.clone(),
+                                    self.id,
+                                    self.state.view + 1,
+                                    seq_num,
+                                    &ClientRequest::no_op(),
+                                )
+                            };
+                            outstanding_pre_prepares.push(new_pre_prepare_for_view);
+                        }
 
                         let new_view = NewView::new_with_signature(
                             self.keypair_bytes.clone(), 
                             self.id,
                             view_change.new_view,
                             view_change_messages,
-                            outstanding_pre_prepares
+                            outstanding_pre_prepares.clone(),
                         );
 
 
-                        let mut latest_stable_seq_num = self.state.last_stable_seq_num;
-                        let mut max_seq_num = self.state.last_stable_seq_num;
-                        for view_change in new_view.view_change_messages.iter() {
-                            latest_stable_seq_num = std::cmp::max(latest_stable_seq_num, view_change.last_stable_seq_num);
-                            for (seq_num, _) in view_change.subsequent_prepares.iter() {
-                                max_seq_num = std::cmp::max(max_seq_num, *seq_num);
-                            }
-                        }
+                        
                         info!("Broadcasting new view {} {} {}", new_view.view, latest_stable_seq_num, max_seq_num);
                        
                         self.state.seq_num = latest_stable_seq_num;
-                        // TODO: Init pre-prepares here
-                        self.state.seq_num = max_seq_num;
-                        
+                        for pre_prepare in outstanding_pre_prepares.iter() {
+                            let _ = self.tx_consensus.send(ConsensusCommand::InitPrePrepare(pre_prepare.clone().client_request)).await;
+                        }
                         
                         let _ = self.tx_node.send(NodeCommand::BroadCastMessageCommand(BroadCastMessage {
                             message: Message::NewViewMessage(new_view)
@@ -555,9 +588,6 @@ impl Consensus {
                     self.state.view = new_view.view;
 
                   
-                    
-                    // issue prepares for each pre-prepare here
-                    // for each seq num between latest stable and max_seq_num, we issue new pre-prepare messages
                 }
 
                 ConsensusCommand::ApplyCommit(commit) => {

@@ -21,30 +21,30 @@ async fn main() -> std::io::Result<()> {
     let addrs = vec![replica_addr0, replica_addr1, replica_addr2, replica_addr3];
 
     let send_fut = tokio::spawn(async move {
-        let mut timestamp = 0;
+        let mut timestamp: u32 = 0;
         loop {
             timestamp += 1;
             let message: Message = Message::ClientRequestMessage(ClientRequest {
                 respond_addr: me_addr,
-                time_stamp: timestamp,
+                time_stamp: timestamp as usize,
                 key: String::from("def"),
-                value: Some(3),
+                value: Some(timestamp),
             });
             broadcast_message(&addrs, message).await;
 
             timestamp += 1;
             let message: Message = Message::ClientRequestMessage(ClientRequest {
                 respond_addr: me_addr,
-                time_stamp: timestamp,
+                time_stamp: timestamp as usize,
                 key: String::from("def"),
-                value: Some(4),
+                value: Some(timestamp),
             });
             broadcast_message(&addrs, message).await;
 
             timestamp += 1;
             let message: Message = Message::ClientRequestMessage(ClientRequest {
                 respond_addr: me_addr,
-                time_stamp: timestamp,
+                time_stamp: timestamp as usize,
                 key: String::from("def"),
                 value: None,
             });
@@ -53,7 +53,7 @@ async fn main() -> std::io::Result<()> {
             timestamp += 1;
             let message: Message = Message::ClientRequestMessage(ClientRequest {
                 respond_addr: me_addr,
-                time_stamp: timestamp,
+                time_stamp: timestamp as usize,
                 key: String::from("def"),
                 value: None,
             });
