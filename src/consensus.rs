@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::messages::{
     BroadCastMessage, CheckPoint, ClientRequest, ClientResponse, Commit, ConsensusCommand, Message,
-    NodeCommand, PrePrepare, Prepare, SendMessage, ViewChange, NewView
+    NewView, NodeCommand, PrePrepare, Prepare, SendMessage, ViewChange,
 };
 use crate::state::State;
 use crate::view_changer::{self, ViewChanger};
@@ -152,7 +152,7 @@ impl Consensus {
                         }
 
                         Message::ClientRequestMessage(client_request) => {
-                            info!("Saw client request");
+                            //info!("Saw client request");
                             if self.state.should_process_client_request(&client_request) {
                                 if self.id != self.state.current_leader() {
                                     let _ = self
@@ -191,7 +191,10 @@ impl Consensus {
                         continue;
                     }
 
-                    self.state.message_bank.sent_requests.insert(request.clone());
+                    self.state
+                        .message_bank
+                        .sent_requests
+                        .insert(request.clone());
                     let leader = self.state.current_leader();
                     let leader_addr = self.config.peer_addrs.get(&leader).unwrap();
                     let _ = self
@@ -412,7 +415,10 @@ impl Consensus {
                     // We received a Commit Message for a request that we deemed valid
                     // so we increment the vote count
 
-                    info!("Accepted commit from {} with view {} seq-num {}", commit.id, commit.view, commit.seq_num);
+                    info!(
+                        "Accepted commit from {} with view {} seq-num {}",
+                        commit.id, commit.view, commit.seq_num
+                    );
 
                     self.state.message_bank.outstanding_commits.remove(&commit);
 
@@ -475,7 +481,7 @@ impl Consensus {
                         }
                     }
 
-                    // construct the view change object
+                  
                     let view_change = ViewChange::new_with_signature(
                         self.keypair_bytes.clone(),
                         self.id,
@@ -503,8 +509,7 @@ impl Consensus {
                     if self.state.view_change_votes.len() > 2 * self.config.num_faulty {
                         // broadcast a new view message
                         info!("Broadcasting new view");
-                        
-                        
+
                         let mut view_change_messages = Vec::<ViewChange>::new();
                         for (_, view_change) in self.state.view_change_votes.iter() {
                             view_change_messages.push(view_change.clone());
@@ -513,72 +518,93 @@ impl Consensus {
                         let mut latest_stable_seq_num = self.state.last_stable_seq_num;
                         let mut max_seq_num = self.state.last_stable_seq_num;
                         for view_change in view_change_messages.iter() {
-                            latest_stable_seq_num = std::cmp::max(latest_stable_seq_num, view_change.last_stable_seq_num);
+                            latest_stable_seq_num = std::cmp::max(
+                                latest_stable_seq_num,
+                                view_change.last_stable_seq_num,
+                            );
                             for (seq_num, _) in view_change.subsequent_prepares.iter() {
                                 max_seq_num = std::cmp::max(max_seq_num, *seq_num);
                             }
                         }
 
                         let mut outstanding_pre_prepares = Vec::<PrePrepare>::new();
-                        //TODO: populate this
                         for seq_num in latest_stable_seq_num + 1..max_seq_num + 1 {
-                            let mut pre_prepare_highest_view_at_seq_num : Option<PrePrepare> = None;
+                            let mut pre_prepare_highest_view_at_seq_num: Option<PrePrepare> = None;
                             for view_change in view_change_messages.iter() {
-                                if let Some((pre_prepare, _)) = view_change.subsequent_prepares.get(&seq_num) {
-                                    if pre_prepare_highest_view_at_seq_num.clone().is_none() || pre_prepare.view > pre_prepare_highest_view_at_seq_num.clone().unwrap().view {
-                                        pre_prepare_highest_view_at_seq_num = Some(pre_prepare.clone());
-                                    }   
+                                if let Some((pre_prepare, _)) =
+                                    view_change.subsequent_prepares.get(&seq_num)
+                                {
+                                    if pre_prepare_highest_view_at_seq_num.clone().is_none()
+                                        || pre_prepare.view
+                                            > pre_prepare_highest_view_at_seq_num
+                                                .clone()
+                                                .unwrap()
+                                                .view
+                                    {
+                                        pre_prepare_highest_view_at_seq_num =
+                                            Some(pre_prepare.clone());
+                                    }
                                 }
                             }
 
-                            let new_pre_prepare_for_view = if let Some(e_pre_prepare) = pre_prepare_highest_view_at_seq_num {
+                            let new_pre_prepare_for_view =
+                                if let Some(e_pre_prepare) = pre_prepare_highest_view_at_seq_num {
                                     PrePrepare::new_with_signature(
                                         self.keypair_bytes.clone(),
                                         self.id,
                                         self.state.view + 1,
                                         seq_num,
-                                        &e_pre_prepare.client_request.clone()
+                                        &e_pre_prepare.client_request.clone(),
                                     )
-                            } else {
-                                // create a pre-prepare with a no-op request
-                                // to fill in gaps in sequence number
-                                PrePrepare::new_with_signature(
-                                    self.keypair_bytes.clone(),
-                                    self.id,
-                                    self.state.view + 1,
-                                    seq_num,
-                                    &ClientRequest::no_op(),
-                                )
-                            };
+                                } else {
+                                    // create a pre-prepare with a no-op request
+                                    // to fill in gaps in sequence number
+                                    PrePrepare::new_with_signature(
+                                        self.keypair_bytes.clone(),
+                                        self.id,
+                                        self.state.view + 1,
+                                        seq_num,
+                                        &ClientRequest::no_op(),
+                                    )
+                                };
                             outstanding_pre_prepares.push(new_pre_prepare_for_view);
                         }
 
                         let new_view = NewView::new_with_signature(
-                            self.keypair_bytes.clone(), 
+                            self.keypair_bytes.clone(),
                             self.id,
                             view_change.new_view,
                             view_change_messages,
                             outstanding_pre_prepares.clone(),
                         );
 
+                        info!(
+                            "Broadcasting new view {} {} {}",
+                            new_view.view, latest_stable_seq_num, max_seq_num
+                        );
 
-                        
-                        info!("Broadcasting new view {} {} {}", new_view.view, latest_stable_seq_num, max_seq_num);
-                       
                         self.state.seq_num = latest_stable_seq_num;
                         for pre_prepare in outstanding_pre_prepares.iter() {
-                            let _ = self.tx_consensus.send(ConsensusCommand::InitPrePrepare(pre_prepare.clone().client_request)).await;
+                            let _ = self
+                                .tx_consensus
+                                .send(ConsensusCommand::InitPrePrepare(
+                                    pre_prepare.clone().client_request,
+                                ))
+                                .await;
                         }
-                        
-                        let _ = self.tx_node.send(NodeCommand::BroadCastMessageCommand(BroadCastMessage {
-                            message: Message::NewViewMessage(new_view)
-                        })).await;
+
+                        let _ = self
+                            .tx_node
+                            .send(NodeCommand::BroadCastMessageCommand(BroadCastMessage {
+                                message: Message::NewViewMessage(new_view),
+                            }))
+                            .await;
                     }
                 }
 
                 ConsensusCommand::AcceptNewView(new_view) => {
                     info!("Moving to view {}", new_view.view);
-                    
+
                     self.state.in_view_change = false;
                     self.state.checkpoint_votes.clear();
                     self.view_changer.reset();
@@ -592,8 +618,10 @@ impl Consensus {
                         .message_bank
                         .accepted_pre_prepare_requests
                         .get(&(commit.view, commit.seq_num));
-                    
-                    if pre_prepare.is_none() {continue;}
+
+                    if pre_prepare.is_none() {
+                        continue;
+                    }
                     let client_request = pre_prepare.unwrap().clone().client_request;
 
                     self.apply_commit(&commit, &client_request).await;
@@ -631,7 +659,6 @@ impl Consensus {
                             // At this point, we have enough checkpoint messages to update out state
                             info!("Updating state from checkpoint");
 
-                           
                             if self.state.last_seq_num_committed < checkpoint.committed_seq_num {
                                 // if this node is still behind after applying all commits in the checkpoint,
                                 // we fast-forward its state, but note that no client responses are sent.
@@ -651,9 +678,9 @@ impl Consensus {
                             // we update the view to the largest sequence number in the commits
                             // in the checkpoint
                             let new_view = checkpoint.view;
-                            
+
                             if new_view != self.state.view {
-                                // if we update to a new view, 
+                                // if we update to a new view,
                                 // then we need to reset any view change processes
                                 // which we initiated
                                 self.state.in_view_change = false;
@@ -661,6 +688,10 @@ impl Consensus {
                             }
 
                             self.state.view = new_view;
+
+                            for commit in self.state.get_next_consecutive_commits().iter() {
+                                let _ = self.tx_consensus.send(ConsensusCommand::ApplyCommit(commit.clone())).await;
+                            }
 
                             // remove all of the messages pertaining to requests with seq_num < last_stable_seq_num
                             self.state.garbage_collect();
@@ -687,7 +718,10 @@ impl Consensus {
             .remove_from_sent_pre_prepares(&(commit.view, commit.seq_num));
 
         if commit.seq_num == self.state.last_seq_num_committed + 1 {
-            info!("Applying client request with view {} seq-num {}", commit.view, commit.seq_num);
+            info!(
+                "Applying client request with view {} seq-num {}",
+                commit.view, commit.seq_num
+            );
 
             let (ret, new_applies) = self.state.apply_commit(client_request, commit);
             for commit in new_applies.iter() {
@@ -737,7 +771,7 @@ impl Consensus {
 
     pub async fn init_checkpoint(&mut self) {
         info!("Initiating checkpoint");
-      
+
         let checkpoint = CheckPoint::new_with_signature(
             self.keypair_bytes.clone(),
             self.id,

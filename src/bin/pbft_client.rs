@@ -1,8 +1,8 @@
 use pbft::messages::{ClientRequest, Message};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufStream};
-use tokio::{net::TcpListener, net::TcpStream};
 use tokio::time::sleep;
+use tokio::{net::TcpListener, net::TcpStream};
 
 use serde_json;
 
@@ -49,7 +49,7 @@ async fn main() -> std::io::Result<()> {
                 value: None,
             });
             broadcast_message(&addrs, message).await;
-            
+
             timestamp += 1;
             let message: Message = Message::ClientRequestMessage(ClientRequest {
                 respond_addr: me_addr,
@@ -60,7 +60,7 @@ async fn main() -> std::io::Result<()> {
             broadcast_message(&addrs, message).await;
 
             sleep(std::time::Duration::from_secs(4)).await;
-    }
+        }
     });
 
     let recv_fut = tokio::spawn(async move {

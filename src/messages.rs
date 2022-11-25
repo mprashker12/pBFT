@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::net::{SocketAddr, IpAddr, Ipv4Addr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use serde::{Deserialize, Serialize};
 
@@ -280,7 +280,6 @@ impl CheckPoint {
         state_digest: Vec<u8>,
         state: HashMap<Key, Value>,
     ) -> Self {
-
         let key_pair = Keypair::from_bytes(key_pair_bytes.as_slice()).unwrap();
         let mut pre_hashed = Sha512::new();
         pre_hashed.update(b"Checkpoint");
@@ -344,9 +343,9 @@ impl ViewChange {
         }
     }
 
-    pub fn is_properly_signed_by(&self, pub_key: &PublicKey) -> bool {true}
-
-   
+    pub fn is_properly_signed_by(&self, pub_key: &PublicKey) -> bool {
+        true
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -359,11 +358,11 @@ pub struct NewView {
 
 impl NewView {
     pub fn new_with_signature(
-        keypair_bytes: Vec<u8>, 
-        id: usize, 
+        keypair_bytes: Vec<u8>,
+        id: usize,
         view: usize,
         view_change_messages: Vec<ViewChange>,
-        outstanding_prepares: Vec<PrePrepare>
+        outstanding_prepares: Vec<PrePrepare>,
     ) -> Self {
         Self {
             id,
@@ -373,7 +372,9 @@ impl NewView {
         }
     }
 
-    pub fn is_properly_signed_by(&self, pub_key: &PublicKey) -> bool {true}
+    pub fn is_properly_signed_by(&self, pub_key: &PublicKey) -> bool {
+        true
+    }
 }
 
 // The following message are not consensus messages and are sent to and from the client

@@ -67,6 +67,7 @@ impl State {
             return false;
         }
         if self.view != pre_prepare.view {
+            println!("Dropping pre-prepare because of view");
             return false;
         }
         if pre_prepare.client_request_digest != pre_prepare.client_request.digest() {
@@ -128,9 +129,7 @@ impl State {
         if self.in_view_change {
             return false;
         }
-        // maintain timestamp of last request we applied to our state from the client
-        // if the timestamp is too small, then we do not accept the message
-
+        
         true
     }
 
@@ -184,20 +183,24 @@ impl State {
             Some(ret)
         };
 
-        // determine if there are any outstanding commits which we can now apply
-        let mut new_applies = Vec::<Commit>::new();
-        let mut try_commit = commit.seq_num + 1;
+       
+
+        (commit_res, self.get_next_consecutive_commits())
+    }
+
+    pub fn get_next_consecutive_commits(&self) -> Vec<Commit> {
+        let mut ret = Vec::<Commit>::new();
+        let mut try_commit = self.last_seq_num_committed + 1;
 
         while let Some(commit) = self
             .message_bank
             .accepted_commits_not_applied
             .get(&try_commit)
         {
-            new_applies.push(commit.clone());
+            ret.push(commit.clone());
             try_commit += 1;
         }
-
-        (commit_res, new_applies)
+        ret
     }
 
     pub fn update_checkpoint_meta(&mut self, seq_num: &usize, state_digest: &[u8]) {
