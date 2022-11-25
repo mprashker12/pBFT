@@ -577,17 +577,12 @@ impl Consensus {
                 }
 
                 ConsensusCommand::AcceptNewView(new_view) => {
-                    
-
-                    //self.state.in_view_change = false;
-                    //self.state.checkpoint_votes.clear();
                     info!("Moving to view {}", new_view.view);
                     
                     self.state.in_view_change = false;
+                    self.state.checkpoint_votes.clear();
                     self.view_changer.reset();
                     self.state.view = new_view.view;
-
-                  
                 }
 
                 ConsensusCommand::ApplyCommit(commit) => {

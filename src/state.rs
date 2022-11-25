@@ -8,6 +8,7 @@ use crate::node::Node;
 use crate::{Key, NodeId, Value};
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::net::SocketAddr;
 
 use ed25519_dalek::{Digest, Sha512};
 
