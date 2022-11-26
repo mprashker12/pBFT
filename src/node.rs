@@ -15,12 +15,10 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::{sleep, Duration, Instant};
 use tokio::{io::AsyncBufReadExt, sync::Mutex};
 
-use ed25519_dalek::{Keypair, PublicKey, SecretKey};
+use ed25519_dalek::PublicKey;
 
 use env_logger::Env;
-use log::{debug, error, info, log_enabled, Level};
-
-// TODO: We may use a mpsc channel for the inner node to communicate with its parent node
+use log::info;
 
 pub struct Node {
     /// Id of this node

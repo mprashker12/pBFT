@@ -481,7 +481,6 @@ impl Consensus {
                         }
                     }
 
-                  
                     let view_change = ViewChange::new_with_signature(
                         self.keypair_bytes.clone(),
                         self.id,
@@ -690,7 +689,10 @@ impl Consensus {
                             self.state.view = new_view;
 
                             for commit in self.state.get_next_consecutive_commits().iter() {
-                                let _ = self.tx_consensus.send(ConsensusCommand::ApplyCommit(commit.clone())).await;
+                                let _ = self
+                                    .tx_consensus
+                                    .send(ConsensusCommand::ApplyCommit(commit.clone()))
+                                    .await;
                             }
 
                             // remove all of the messages pertaining to requests with seq_num < last_stable_seq_num
@@ -733,20 +735,26 @@ impl Consensus {
 
             // build the client response and send to client
 
-            let res_val = if ret.is_some() {
-                Some(*ret.unwrap().unwrap())
-            } else {
-                None
-            };
+            let res_val = if ret.is_some() { ret.unwrap() } else { None };
             let res_success = res_val.is_some() || client_request.value.is_some();
 
-            let client_response = ClientResponse::new_with_signature(
-                self.id,
-                client_request.time_stamp,
-                client_request.key.clone(),
-                res_val,
-                res_success,
-            );
+            let client_response = if res_val.is_some() {
+                ClientResponse::new_with_signature(
+                    self.id,
+                    client_request.time_stamp,
+                    client_request.key.clone(),
+                    Some(*(res_val.unwrap())),
+                    res_success,
+                )
+            } else {
+                ClientResponse::new_with_signature(
+                    self.id,
+                    client_request.time_stamp,
+                    client_request.key.clone(),
+                    None,
+                    res_success,
+                )
+            };
 
             let _ = self
                 .tx_node

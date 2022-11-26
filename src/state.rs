@@ -129,7 +129,7 @@ impl State {
         if self.in_view_change {
             return false;
         }
-        
+
         true
     }
 
@@ -140,7 +140,6 @@ impl State {
     }
 
     pub fn should_accept_view_change(&self, view_change: &ViewChange) -> bool {
-
         // make sure the view change is for the next view
         if view_change.new_view != self.view + 1 {
             return false;
@@ -183,8 +182,6 @@ impl State {
             Some(ret)
         };
 
-       
-
         (commit_res, self.get_next_consecutive_commits())
     }
 
@@ -210,7 +207,7 @@ impl State {
             .checkpoint_votes
             .get(&(*seq_num, state_digest.to_vec()))
             .unwrap();
-        
+
         // create a new checkpoint proof with only the checkpoints
         // from nodes who voted for this new checkpoint
         for node_id in curr_vote_set.iter() {
