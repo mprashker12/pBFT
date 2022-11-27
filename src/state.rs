@@ -7,7 +7,7 @@ use crate::messages::{
 use crate::node::Node;
 use crate::{Key, NodeId, Value};
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque, BTreeMap};
 use std::net::SocketAddr;
 
 use ed25519_dalek::{Digest, Sha512};
@@ -51,7 +51,7 @@ pub struct State {
     /// Structure storing all messages, including log
     pub message_bank: MessageBank,
     /// Key-Value store which the system actually maintains
-    pub store: HashMap<Key, Value>,
+    pub store: BTreeMap<Key, Value>,
 }
 impl State {
     pub fn current_leader(&self) -> NodeId {

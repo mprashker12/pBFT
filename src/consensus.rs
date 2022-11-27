@@ -141,7 +141,7 @@ impl Consensus {
                         }
 
                         Message::CheckPointMessage(checkpoint) => {
-                            info!("Saw checkpoint from {}", checkpoint.id);
+                            info!("Saw checkpoint from {} {} {:?} {:?}", checkpoint.id, checkpoint.committed_seq_num, checkpoint.state, checkpoint.state_digest);
 
                             if self.state.should_accept_checkpoint(&checkpoint) {
                                 let _ = self
@@ -624,7 +624,7 @@ impl Consensus {
                     let client_request = pre_prepare.unwrap().clone().client_request;
 
                     self.apply_commit(&commit, &client_request).await;
-                    info!("New state: {}", self.state.last_seq_num_committed);
+                    info!("New state: {} {:?}", self.state.last_seq_num_committed, self.state.store);
 
                     // The request we just committed was enough to now trigger a checkpoint
                     if self.state.last_seq_num_committed % self.config.checkpoint_frequency == 0
@@ -654,7 +654,8 @@ impl Consensus {
                         checkpoint.state_digest.clone(),
                     )) {
                         curr_vote_set.insert(checkpoint.id);
-                        if curr_vote_set.len() > 2 * self.config.num_faulty {
+                
+                        if curr_vote_set.len() >= 2 * self.config.num_faulty {
                             // At this point, we have enough checkpoint messages to update out state
                             info!("Updating state from checkpoint");
 

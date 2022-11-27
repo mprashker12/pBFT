@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeMap};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use serde::{Deserialize, Serialize};
@@ -267,7 +267,7 @@ pub struct CheckPoint {
     pub committed_seq_num: usize,
     pub view: usize,
     pub state_digest: Vec<u8>,
-    pub state: HashMap<Key, Value>,
+    pub state: BTreeMap<Key, Value>,
     pub signature: Vec<u8>,
 }
 
@@ -278,7 +278,7 @@ impl CheckPoint {
         committed_seq_num: usize,
         view: usize,
         state_digest: Vec<u8>,
-        state: HashMap<Key, Value>,
+        state: BTreeMap<Key, Value>,
     ) -> Self {
         let key_pair = Keypair::from_bytes(key_pair_bytes.as_slice()).unwrap();
         let mut pre_hashed = Sha512::new();

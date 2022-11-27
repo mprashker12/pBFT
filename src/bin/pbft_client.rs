@@ -5,6 +5,7 @@ use pbft::node::Node;
 
 use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::str::FromStr;
 use std::sync::Arc;
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufStream};
@@ -37,13 +38,17 @@ async fn main() -> std::io::Result<()> {
     let me_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 38079);
     let listener = TcpListener::bind(me_addr.clone()).await.unwrap();
 
-    let replica_addr0 = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 38060);
+    let replica_addr0 = SocketAddr::from_str("127.0.0.1:38060").unwrap();
+
+    //let replica_addr0 = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 38060);
     let replica_addr1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 38061);
     let replica_addr2 = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 38062);
     let replica_addr3 = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 38063);
 
     let addrs = vec![replica_addr0, replica_addr1, replica_addr2, replica_addr3];
 
+    
+    // message sending logic which can be changed for new tests
     let send_fut = tokio::spawn(async move {
         let mut timestamp: u32 = 0;
         loop {
@@ -86,6 +91,8 @@ async fn main() -> std::io::Result<()> {
             sleep(std::time::Duration::from_secs(4)).await;
         }
     });
+
+
 
     let (tx_client, mut rx_client) = tokio::sync::mpsc::channel(32);
 
