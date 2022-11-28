@@ -15,10 +15,10 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::{sleep, Duration, Instant};
 use tokio::{io::AsyncBufReadExt, sync::Mutex};
 
-use ed25519_dalek::PublicKey;
+use ed25519_dalek::{PublicKey};
 
 use env_logger::Env;
-use log::info;
+use log::{info};
 
 pub struct Node {
     /// Id of this node
@@ -99,7 +99,7 @@ impl Node {
                         pub_key_vec: inner.pub_key.as_bytes().to_vec(),
                     }))
                     .await;
-                sleep(std::time::Duration::from_secs(1)).await;
+                sleep(inner.config.identity_broadcast_interval).await;
             }
         });
 
@@ -118,7 +118,7 @@ impl Node {
                     });
                 }
 
-                // make a future representing an incoming message from the consensus engine
+                // future representing an incoming message from the consensus engine
                 res = self.rx_node.recv() => {
                     let cmd = res.unwrap();
                     match cmd {

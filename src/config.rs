@@ -14,7 +14,11 @@ pub struct Config {
     /// How long we wait after receiving a pre-prepare request
     /// which we have not yet executed before initiating a view-change
     pub request_timeout: std::time::Duration,
-
+    /// How long a node should wait if it is currently leader
+    /// to rebroadcast a pre-prepare which has not been applied to yet
+    pub rebroadcast_timeout: std::time::Duration,
+    /// How often a node should broadcast its identity (with pub key) to the network
+    pub identity_broadcast_interval: std::time::Duration,   
     /// How many requests we see in between stable checkpoints
     pub checkpoint_frequency: usize,
 }

@@ -1,4 +1,4 @@
-use pbft::NodeId;
+use pbft::{NodeId, Key, Value};
 use pbft::messages::{ClientRequest, Message, ClientResponse};
 use pbft::node::Node;
 
@@ -17,6 +17,14 @@ use tokio::sync::mpsc::{Sender, Receiver};
 use serde_json;
 
 #[derive(Clone)]
+pub struct Client {
+    peer_addrs: Vec<SocketAddr>,
+    listen_addr: SocketAddr,
+    vote_counter: VoteCounter,
+    timestamp: usize,
+}
+
+#[derive(Clone)]
 pub struct VoteCounter {
     pub success_vote_quorum: Arc<Mutex<HashMap<usize, HashSet<NodeId>>>>,
     pub votes: Arc<Mutex<HashMap<(usize, usize), ClientResponse>>>,
@@ -33,66 +41,14 @@ pub struct VoteReceit {
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
+
     // note that the client only needs f + 1 replies before accepting
 
     let me_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 38079);
-    let listener = TcpListener::bind(me_addr.clone()).await.unwrap();
-
     let replica_addr0 = SocketAddr::from_str("127.0.0.1:38060").unwrap();
-
-    //let replica_addr0 = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 38060);
-    let replica_addr1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 38061);
-    let replica_addr2 = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 38062);
-    let replica_addr3 = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 38063);
-
-    let addrs = vec![replica_addr0, replica_addr1, replica_addr2, replica_addr3];
-
-    
-    // message sending logic which can be changed for new tests
-    let send_fut = tokio::spawn(async move {
-        let mut timestamp: u32 = 0;
-        loop {
-            timestamp += 1;
-            let message: Message = Message::ClientRequestMessage(ClientRequest {
-                respond_addr: me_addr,
-                time_stamp: timestamp as usize,
-                key: String::from("def"),
-                value: Some(timestamp),
-            });
-            broadcast_message(&addrs, message).await;
-
-            timestamp += 1;
-            let message: Message = Message::ClientRequestMessage(ClientRequest {
-                respond_addr: me_addr,
-                time_stamp: timestamp as usize,
-                key: String::from("abc"),
-                value: Some(timestamp),
-            });
-            broadcast_message(&addrs, message).await;
-
-            timestamp += 1;
-            let message: Message = Message::ClientRequestMessage(ClientRequest {
-                respond_addr: me_addr,
-                time_stamp: timestamp as usize,
-                key: String::from("abc"),
-                value: None,
-            });
-            broadcast_message(&addrs, message).await;
-
-            timestamp += 1;
-            let message: Message = Message::ClientRequestMessage(ClientRequest {
-                respond_addr: me_addr,
-                time_stamp: timestamp as usize,
-                key: String::from("def"),
-                value: None,
-            });
-            broadcast_message(&addrs, message).await;
-
-            sleep(std::time::Duration::from_secs(4)).await;
-        }
-    });
-
-
+    let replica_addr1 = SocketAddr::from_str("127.0.0.1:38061").unwrap();
+    let replica_addr2 = SocketAddr::from_str("127.0.0.1:38062").unwrap();
+    let replica_addr3 = SocketAddr::from_str("127.0.0.1:38063").unwrap();
 
     let (tx_client, mut rx_client) = tokio::sync::mpsc::channel(32);
 
@@ -100,27 +56,35 @@ async fn main() -> std::io::Result<()> {
         success_vote_quorum: Arc::new(Mutex::new(HashMap::new())),
         votes: Arc::new(Mutex::new(HashMap::new())),
         tx_client, 
-        vote_threshold: 1,
+        vote_threshold: 1, /* number of faulty processes. We need to exceed this value */
     };
 
-    let recv_fut = tokio::spawn(async move {
+
+    let peer_addrs = vec![replica_addr0, replica_addr1, replica_addr2, replica_addr3];
+
+    let outer_client = Client {
+        peer_addrs,
+        listen_addr: me_addr,
+        vote_counter,
+        timestamp: 0,
+    };
+
+    
+    // message sending logic which can be changed for new tests
+    let mut client = outer_client.clone();
+    let send_fut = tokio::spawn(async move {
         loop {
-            match listener.accept().await {
-                Ok((stream, _)) => {
-                    let mut vote_counter = vote_counter.clone();
-                    tokio::spawn(async move {
-                        let _ = vote_counter.read_response(stream).await;
-                    });
-                }
-                Err(e) => {
-                    println!("{:?}", e);
-                }
-            }
+            client.issue_set(String::from("abc"), client.timestamp as u32).await;
+            client.issue_set(String::from("def"), client.timestamp as u32).await;
+            client.issue_get(String::from("abc")).await;
+            client.issue_get(String::from("def")).await;
+            sleep(std::time::Duration::from_millis(700)).await;
         }
     });
 
-    let vote_count_fut = tokio::spawn(async move {
 
+    // future listening for vote count results from the client
+    let vote_count_fut = tokio::spawn(async move {
         let mut succ_votes = HashMap::<usize, VoteReceit>::new();
 
         loop {
@@ -130,20 +94,65 @@ async fn main() -> std::io::Result<()> {
             println!("Got enough votes for {}. VOTES: {:?}", vote_receit.timestamp, vote_receit.votes);
         }
     });
-
-    send_fut.await?;
-    recv_fut.await?;
-    vote_count_fut.await?;
+    tokio::select! {
+        _ = send_fut => {}
+        _ = outer_client.listen() => {}
+        _ = vote_count_fut => {}
+    }
+    
 
     Ok(())
 }
 
-async fn broadcast_message(addrs: &[SocketAddr], message: Message) {
-    for addr in addrs.iter() {
-        let node_stream = TcpStream::connect(addr).await;
-        if let Ok(mut stream) = node_stream {
-            let _bytes_written = stream.write(message.serialize().as_slice()).await;
+
+impl Client {
+
+    async fn listen(&self) {
+        let listener = TcpListener::bind(self.listen_addr).await.unwrap();
+        loop {
+            match listener.accept().await {
+                Ok((stream, _)) => {
+                    let mut vote_counter = self.vote_counter.clone();
+                    tokio::spawn(async move {
+                        let _ = vote_counter.read_response(stream).await;
+                    });
+                }
+                Err(e) => {
+                    println!("{:?}", e);
+                }
+            }
         }
+    }
+
+    async fn broadcast_message(&self, message: Message) {
+        for addr in self.peer_addrs.iter() {
+            let node_stream = TcpStream::connect(addr).await;
+            if let Ok(mut stream) = node_stream {
+                let _bytes_written = stream.write(message.serialize().as_slice()).await;
+            }
+        }
+    }
+
+    async fn issue_set(&mut self, key: Key, value: Value) {
+        let set_message: Message = Message::ClientRequestMessage(ClientRequest {
+            respond_addr: self.listen_addr,
+            time_stamp: self.timestamp,
+            key,
+            value: Some(value),
+        });
+        self.timestamp += 1;
+        self.broadcast_message(set_message).await;
+    }
+
+    async fn issue_get(&mut self, key: Key) {
+        let get_message: Message = Message::ClientRequestMessage(ClientRequest {
+            respond_addr: self.listen_addr,
+            time_stamp: self.timestamp,
+            key,
+            value: None,
+        });
+        self.timestamp += 1;
+        self.broadcast_message(get_message).await;
     }
 }
 impl VoteCounter {
@@ -157,10 +166,10 @@ impl VoteCounter {
         let response: Message = serde_json::from_str(&res).unwrap();
         let response = match response {
             Message::ClientResponseMessage(response) => {response}
-            _ => {return Ok(());}
+            _ => {/* received a response which was not a client response, so just return */return Ok(());}
         };
 
-        //println!("Got: {:?}", &response);
+        // if the response is not a success, then we drop it
 
         if response.success {
             let mut success_vote_quorum = self.success_vote_quorum.lock().await;

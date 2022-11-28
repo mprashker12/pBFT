@@ -44,7 +44,7 @@ impl ViewChanger {
     }
 
     pub async fn wait_for_sent_pre_prepares(&self, view_seq_num_pair: &(usize, usize)) {
-        sleep(std::time::Duration::from_secs(2)).await;
+        sleep(self.config.rebroadcast_timeout).await;
         if self.is_in_sent_pre_prepares(&view_seq_num_pair.clone()) {
             let _ = self
                 .tx_consensus

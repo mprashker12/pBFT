@@ -38,24 +38,15 @@ async fn main() -> Result<()> {
         3,
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 38063),
     );
-    peer_addrs.insert(
-        4,
-        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 38064),
-    );
-    peer_addrs.insert(
-        5,
-        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 38065),
-    );
-    peer_addrs.insert(
-        6,
-        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 38066),
-    );
+   
 
     let config = Config {
-        num_nodes: 7,
+        num_nodes: 4,
         num_faulty: 1,
         peer_addrs,
-        request_timeout: std::time::Duration::from_secs(10),
+        request_timeout: std::time::Duration::from_secs(4),
+        rebroadcast_timeout: std::time::Duration::from_secs(2),
+        identity_broadcast_interval: std::time::Duration::from_secs(1),
         checkpoint_frequency: 15,
     };
 

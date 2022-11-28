@@ -265,14 +265,16 @@ impl Consensus {
                         "Rebroadcasting PrePrepare with seq-num {:?}",
                         view_seq_num_pair
                     );
-
-                    let pre_prepare = self
+                    let pre_prepare= self
                         .state
                         .message_bank
                         .accepted_pre_prepare_requests
-                        .get(&view_seq_num_pair)
-                        .unwrap()
-                        .clone();
+                        .get(&view_seq_num_pair);
+
+                    if pre_prepare.is_none() {return;}
+                    let pre_prepare = pre_prepare.unwrap().clone();
+                        
+
                     let pre_prepare_message = Message::PrePrepareMessage(pre_prepare.clone());
                     let _ = self
                         .tx_node
