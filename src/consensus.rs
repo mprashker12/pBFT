@@ -191,6 +191,12 @@ impl Consensus {
                         continue;
                     }
 
+                    if self.config.is_equivocator {
+                        // if we are leader and are malicious, we don't wont to forward
+                        // any client requests after the system kicks us out.
+                        continue;
+                    }
+
                     self.state
                         .message_bank
                         .sent_requests
@@ -633,7 +639,7 @@ impl Consensus {
                     let client_request = pre_prepare.unwrap().clone().client_request;
 
                     self.apply_commit(&commit, &client_request).await;
-                    info!("New state: {} {:?}", self.state.last_seq_num_committed, self.state.store);
+                    info!("Current State: {} {:?}", self.state.last_seq_num_committed, self.state.store);
 
                     // The request we just committed was enough to now trigger a checkpoint
                     if self.state.last_seq_num_committed % self.config.checkpoint_frequency == 0

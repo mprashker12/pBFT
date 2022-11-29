@@ -78,7 +78,7 @@ async fn main() -> std::io::Result<()> {
             client.issue_set(String::from("def"), client.timestamp as u32).await;
             client.issue_get(String::from("abc")).await;
             client.issue_get(String::from("def")).await;
-            sleep(std::time::Duration::from_millis(700)).await;
+            sleep(std::time::Duration::from_millis(2000)).await;
         }
     });
 

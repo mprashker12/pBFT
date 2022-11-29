@@ -4,11 +4,14 @@ use pbft::messages::{ConsensusCommand, NodeCommand};
 use pbft::node::Node;
 use pbft::Result;
 
+use std::str::FromStr;
+
 use ed25519_dalek::{Keypair, PublicKey, SecretKey};
 use rand::rngs::OsRng;
 
 use tokio::sync::mpsc::channel;
 
+use core::num;
 use std::{
     collections::HashMap,
     env,
@@ -19,36 +22,33 @@ use std::{
 async fn main() -> Result<()> {
     // TODO: We will eventually read the config from the command line
     let args: Vec<String> = env::args().collect();
-    let id = args[1].parse::<usize>().unwrap();
-
+    let mut index = 1;
+    let num_nodes = args[index].parse::<usize>().unwrap();
     let mut peer_addrs = HashMap::new();
-    peer_addrs.insert(
-        0,
-        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 38060),
-    );
-    peer_addrs.insert(
-        1,
-        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 38061),
-    );
-    peer_addrs.insert(
-        2,
-        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 38062),
-    );
-    peer_addrs.insert(
-        3,
-        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 38063),
-    );
-   
+    index += 1;
+    for id in 0..num_nodes {
+        let addr = args[index].clone();
+        peer_addrs.insert(id, SocketAddr::from_str(addr.as_str()).unwrap());
+        index += 1;
+    }
+    let id = args[index].parse::<usize>().unwrap();
+    index += 1;
+    
+    let mut is_equivocator = false;
+    if index < args.len() {
+        let byzantine_flag = args[index].clone();
+        is_equivocator = byzantine_flag.as_str().eq("b");
+    }
 
     let config = Config {
-        num_nodes: 4,
+        num_nodes,
         num_faulty: 1,
         peer_addrs,
         request_timeout: std::time::Duration::from_secs(4),
         rebroadcast_timeout: std::time::Duration::from_secs(2),
         identity_broadcast_interval: std::time::Duration::from_secs(1),
         checkpoint_frequency: 15,
-        is_equivocator: false,
+        is_equivocator,
     };
 
     let (tx_consensus, rx_consensus) = channel::<ConsensusCommand>(32);
