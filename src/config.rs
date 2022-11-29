@@ -21,4 +21,6 @@ pub struct Config {
     pub identity_broadcast_interval: std::time::Duration,   
     /// How many requests we see in between stable checkpoints
     pub checkpoint_frequency: usize,
+    /// Does this node equivocate (used for testing)
+    pub is_equivocator: bool,
 }

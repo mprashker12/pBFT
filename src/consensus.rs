@@ -225,6 +225,13 @@ impl Consensus {
 
                     self.state.seq_num += 1;
 
+                    if self.config.is_equivocator {
+                        // this node is an equivocator, so we send
+                        // different messages to different nodes
+                        self.equivocate_pre_prepare(request).await;
+                        continue;
+                    }
+
                     let pre_prepare = PrePrepare::new_with_signature(
                         self.keypair_bytes.clone(),
                         self.id,
@@ -798,5 +805,47 @@ impl Consensus {
                 message: Message::CheckPointMessage(checkpoint),
             }))
             .await;
+    }
+
+    async fn equivocate_pre_prepare(&self, request: ClientRequest) {
+        
+        // mutate the given request
+        let mut d_request = request.clone();
+        d_request.value = Some(42);
+        
+        let pre_prepare = PrePrepare::new_with_signature(
+            self.keypair_bytes.clone(),
+            self.id,
+            self.state.view,
+            self.state.seq_num,
+            &request,
+        );
+
+        let d_pre_prepare = PrePrepare::new_with_signature(
+            self.keypair_bytes.clone(),
+            self.id,
+            self.state.view,
+            self.state.seq_num,
+            &d_request,
+        );
+
+        let pre_prepare_message = Message::PrePrepareMessage(pre_prepare.clone());
+        let d_pre_prepare_message = Message::PrePrepareMessage(d_pre_prepare.clone());
+        
+        // if the peer-id is even, we send the original request, otherwise, 
+        // we send the differentiated request. 
+        for (peer_id, peer_addr) in self.config.peer_addrs.iter() {
+            if peer_id % 2 == 0 {
+                let _ = self.tx_node.send(NodeCommand::SendMessageCommand(SendMessage {
+                    destination: *peer_addr,
+                    message: d_pre_prepare_message.clone(),
+                })).await;
+            } else {
+                let _ = self.tx_node.send(NodeCommand::SendMessageCommand(SendMessage {
+                    destination: *peer_addr,
+                    message: pre_prepare_message.clone(),
+                })).await;
+            }
+        }
     }
 }

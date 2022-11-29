@@ -87,7 +87,12 @@ impl Node {
 
     pub async fn spawn(&mut self) {
         let listener = TcpListener::bind(self.addr).await.unwrap();
-        info!("Node {} listening on {}", self.id, self.addr);
+
+        if !self.config.is_equivocator {
+            info!("Node {} listening on {}", self.id, self.addr);
+        } else {
+            info!("Node {} listening on {} (is Byzantine)", self.id, self.addr);
+        }
 
         // We periodically broadcast our identity to all of the other nodes in the network
         let inner = self.inner.clone();

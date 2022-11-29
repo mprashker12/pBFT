@@ -48,6 +48,7 @@ async fn main() -> Result<()> {
         rebroadcast_timeout: std::time::Duration::from_secs(2),
         identity_broadcast_interval: std::time::Duration::from_secs(1),
         checkpoint_frequency: 15,
+        is_equivocator: false,
     };
 
     let (tx_consensus, rx_consensus) = channel::<ConsensusCommand>(32);

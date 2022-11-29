@@ -395,6 +395,9 @@ impl ClientRequest {
         hasher.update(self.respond_addr.to_string().as_bytes());
         hasher.update(self.time_stamp.to_le_bytes());
         hasher.update(self.key.as_bytes());
+        if let Some(value) = self.value {
+            hasher.update(value.to_le_bytes());
+        }
         if self.value.is_some() {
             hasher.update(self.value.unwrap().to_le_bytes());
         }
