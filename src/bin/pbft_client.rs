@@ -93,8 +93,11 @@ async fn main() -> std::io::Result<()> {
     let send_fut = async move {
         loop {
             client.issue_set(String::from("abc"), client.timestamp as u32).await;
+            sleep(std::time::Duration::from_millis(400)).await;
             client.issue_set(String::from("abc"), client.timestamp as u32).await;
+            sleep(std::time::Duration::from_millis(400)).await;
             client.issue_get(String::from("abc")).await;
+            sleep(std::time::Duration::from_millis(400)).await;
             client.issue_get(String::from("def")).await;
             sleep(std::time::Duration::from_millis(2000)).await;
         }
