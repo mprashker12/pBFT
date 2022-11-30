@@ -121,10 +121,10 @@ async fn main() -> std::io::Result<()> {
 
 
     tokio::select! {
-        //_ = send_fut => {}
+        _ = send_fut => {}
         _ = outer_client.listen() => {}
         _ = vote_count_fut => {}
-        _ = read_cli => {}
+        //_ = read_cli => {}
     }
     
     Ok(())
