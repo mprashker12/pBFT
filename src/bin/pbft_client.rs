@@ -1,21 +1,20 @@
 use pbft::{NodeId, Key, Value};
 use pbft::messages::{ClientRequest, Message, ClientResponse};
-use pbft::node::Node;
+
 
 
 use std::collections::{HashMap, HashSet};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{SocketAddr};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::env;
 
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufStream, Stdin};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::time::sleep;
 use tokio::{net::TcpListener, net::TcpStream};
 use tokio::sync::{Mutex};
-use tokio::sync::mpsc::{Sender, Receiver};
+use tokio::sync::mpsc::{Sender};
 
-use serde_json;
 
 #[derive(Clone)]
 pub struct Client {
@@ -57,7 +56,13 @@ async fn main() -> std::io::Result<()> {
     let me_addr = SocketAddr::from_str(args[index].clone().as_str()).unwrap();
     index += 1;
 
-    // the client has a -t flag. // read in a t flag 
+    let mut client_mode = false;
+    if index < args.len() {
+        let flag = args[index].clone();
+        if flag.as_str().eq("cli") {
+            client_mode = true;
+        }
+    }
 
     let (tx_client, mut rx_client) = tokio::sync::mpsc::channel(32);
 
@@ -122,14 +127,20 @@ async fn main() -> std::io::Result<()> {
         }
     };
 
-
-    tokio::select! {
-        _ = send_fut => {}
-        _ = outer_client.listen() => {}
-        _ = vote_count_fut => {}
-        //_ = read_cli => {}
+    if client_mode {
+        tokio::select! {
+            _ = read_cli => {}
+            _ = outer_client.listen() => {}
+            _ = vote_count_fut => {}
+        }
+    } else {
+        tokio::select! {
+            _ = send_fut => {}
+            _ = outer_client.listen() => {}
+            _ = vote_count_fut => {}
+        }
     }
-    
+        
     Ok(())
 }
 
