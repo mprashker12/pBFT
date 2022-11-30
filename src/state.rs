@@ -67,6 +67,9 @@ impl State {
         if self.in_view_change {
             return false;
         }
+        if self.config.is_equivocator {
+            return false;
+        }
         if self.view != pre_prepare.view {
             warn!("Dropping pre-prepare because wrong view - my view: {}, message view: {}", self.view, pre_prepare.view);
             return false;

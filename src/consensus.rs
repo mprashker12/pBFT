@@ -516,7 +516,6 @@ impl Consensus {
                         .insert(view_change.id, view_change.clone());
                     if self.state.view_change_votes.len() > 2 * self.config.num_faulty {
                         // broadcast a new view message
-                        info!("Broadcasting new view");
 
                         let mut view_change_messages = Vec::<ViewChange>::new();
                         for (_, view_change) in self.state.view_change_votes.iter() {
@@ -587,12 +586,6 @@ impl Consensus {
                             outstanding_pre_prepares.clone(),
                         );
 
-                        info!(
-                            "Broadcasting new view {} {} {}",
-                            new_view.view, latest_stable_seq_num, max_seq_num
-                        );
- 
-
 
                         let _ = self
                             .tx_node
@@ -605,6 +598,9 @@ impl Consensus {
 
                 ConsensusCommand::AcceptNewView(new_view) => {
                     info!("Moving to view {}", new_view.view);
+                    if self.state.current_leader() == self.id {
+                        info!("NEW LEADER (Node {})", self.id);
+                    }
 
                     
                     self.state.in_view_change = false;
@@ -848,7 +844,7 @@ impl Consensus {
         // if the peer-id is even, we send the original request, otherwise, 
         // we send the differentiated request. 
         for (peer_id, peer_addr) in self.config.peer_addrs.iter() {
-            if peer_id % 2 == 0 {
+            if peer_id % 2 == 1 {
                 let _ = self.tx_node.send(NodeCommand::SendMessageCommand(SendMessage {
                     destination: *peer_addr,
                     message: d_pre_prepare_message.clone(),
