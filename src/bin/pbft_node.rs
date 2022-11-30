@@ -47,7 +47,7 @@ async fn main() -> Result<()> {
         request_timeout: std::time::Duration::from_secs(4),
         rebroadcast_timeout: std::time::Duration::from_secs(2),
         identity_broadcast_interval: std::time::Duration::from_secs(1),
-        checkpoint_frequency: 15,
+        checkpoint_frequency: 4,
         is_equivocator,
     };
 
