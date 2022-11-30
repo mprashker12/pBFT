@@ -597,15 +597,17 @@ impl Consensus {
                 }
 
                 ConsensusCommand::AcceptNewView(new_view) => {
+                    
+                    self.state.in_view_change = false;
+                    self.state.checkpoint_votes.clear();
+                    self.state.view = new_view.view;
+
                     info!("Moving to view {}", new_view.view);
                     if self.state.current_leader() == self.id {
                         info!("NEW LEADER (Node {})", self.id);
                     }
 
-                    
-                    self.state.in_view_change = false;
-                    self.state.checkpoint_votes.clear();
-                    self.state.view = new_view.view;
+
                     if self.state.current_leader() == self.id {
                         // if we are the leader in this new view, 
                         // then we need outstanding pre-prepares in this new view
@@ -844,7 +846,7 @@ impl Consensus {
         // if the peer-id is even, we send the original request, otherwise, 
         // we send the differentiated request. 
         for (peer_id, peer_addr) in self.config.peer_addrs.iter() {
-            if peer_id % 2 == 1 {
+            if peer_id % 2 == 0 {
                 let _ = self.tx_node.send(NodeCommand::SendMessageCommand(SendMessage {
                     destination: *peer_addr,
                     message: d_pre_prepare_message.clone(),
