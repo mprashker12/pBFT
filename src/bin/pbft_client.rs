@@ -7,6 +7,7 @@ use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::str::FromStr;
 use std::sync::Arc;
+use std::env;
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufStream, Stdin};
 use tokio::time::sleep;
@@ -18,7 +19,7 @@ use serde_json;
 
 #[derive(Clone)]
 pub struct Client {
-    peer_addrs: Vec<SocketAddr>,
+    peer_addrs: HashMap<usize, SocketAddr>,
     listen_addr: SocketAddr,
     vote_counter: VoteCounter,
     timestamp: usize,
@@ -43,13 +44,20 @@ async fn main() -> std::io::Result<()> {
 
     // note that the client only needs f + 1 replies before accepting
 
-    // the client has a -t flag.
+    let args: Vec<String> = env::args().collect();
+    let mut index = 1;
+    let num_nodes = args[index].parse::<usize>().unwrap();
+    let mut peer_addrs = HashMap::new();
+    index += 1;
+    for id in 0..num_nodes {
+        let addr = args[index].clone();
+        peer_addrs.insert(id, SocketAddr::from_str(addr.as_str()).unwrap());
+        index += 1;
+    }
+    let me_addr = SocketAddr::from_str(args[index].clone().as_str()).unwrap();
+    index += 1;
 
-    let me_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 38079);
-    let replica_addr0 = SocketAddr::from_str("127.0.0.1:38060").unwrap();
-    let replica_addr1 = SocketAddr::from_str("127.0.0.1:38061").unwrap();
-    let replica_addr2 = SocketAddr::from_str("127.0.0.1:38062").unwrap();
-    let replica_addr3 = SocketAddr::from_str("127.0.0.1:38063").unwrap();
+    // the client has a -t flag. // read in a t flag 
 
     let (tx_client, mut rx_client) = tokio::sync::mpsc::channel(32);
 
@@ -59,9 +67,6 @@ async fn main() -> std::io::Result<()> {
         tx_client, 
         vote_threshold: 1, /* number of faulty processes. We need to exceed this value */
     };
-
-
-    let peer_addrs = vec![replica_addr0, replica_addr1, replica_addr2, replica_addr3];
 
     let outer_client = Client {
         peer_addrs,
@@ -146,7 +151,7 @@ impl Client {
     }
 
     async fn broadcast_message(&self, message: Message) {
-        for addr in self.peer_addrs.iter() {
+        for (_, addr) in self.peer_addrs.iter() {
             let node_stream = TcpStream::connect(addr).await;
             if let Ok(mut stream) = node_stream {
                 let _bytes_written = stream.write(message.serialize().as_slice()).await;

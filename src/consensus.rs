@@ -187,7 +187,7 @@ impl Consensus {
                     // which, if it expires and the request is still outstanding,
                     // will initiate the view change protocol
 
-                    if self.state.message_bank.sent_requests.contains(&request) {
+                    if self.state.message_bank.sent_requests.contains(&(self.state.view, request.clone())) {
                         continue;
                     }
 
@@ -200,7 +200,7 @@ impl Consensus {
                     self.state
                         .message_bank
                         .sent_requests
-                        .insert(request.clone());
+                        .insert((self.state.view, request.clone()));
                     let leader = self.state.current_leader();
                     let leader_addr = self.config.peer_addrs.get(&leader).unwrap();
                     let _ = self
@@ -225,7 +225,7 @@ impl Consensus {
                     // Here we are primary and received a client request which we deemed valid
                     // so we broadcast a Pre_prepare Message to the network and assign
                     // the next sequence number to this request
-                    if self.state.message_bank.sent_requests.contains(&request) {
+                    if self.state.message_bank.sent_requests.contains(&(self.state.view, request.clone())) {
                         continue;
                     }
 
@@ -261,7 +261,7 @@ impl Consensus {
                     self.state
                         .message_bank
                         .sent_requests
-                        .insert(request.clone());
+                        .insert((self.state.view, request.clone()));
                     let _ = self
                         .tx_node
                         .send(NodeCommand::BroadCastMessageCommand(BroadCastMessage {
@@ -430,11 +430,6 @@ impl Consensus {
                     // We received a Commit Message for a request that we deemed valid
                     // so we increment the vote count
 
-                    info!(
-                        "Accepted commit from {} with view {} seq-num {}",
-                        commit.id, commit.view, commit.seq_num
-                    );
-
                     self.state.message_bank.outstanding_commits.remove(&commit);
 
                     if let Some(curr_vote_set) = self
@@ -542,6 +537,7 @@ impl Consensus {
                         }
 
                         let mut outstanding_pre_prepares = Vec::<PrePrepare>::new();
+                        self.state.seq_num = latest_stable_seq_num;
                         for seq_num in latest_stable_seq_num + 1..max_seq_num + 1 {
                             let mut pre_prepare_highest_view_at_seq_num: Option<PrePrepare> = None;
                             for view_change in view_change_messages.iter() {
@@ -596,16 +592,8 @@ impl Consensus {
                             "Broadcasting new view {} {} {}",
                             new_view.view, latest_stable_seq_num, max_seq_num
                         );
+ 
 
-                        self.state.seq_num = self.state.last_seq_num_committed;
-                        for pre_prepare in outstanding_pre_prepares.iter() {
-                            let _ = self
-                                .tx_consensus
-                                .send(ConsensusCommand::InitPrePrepare(
-                                    pre_prepare.clone().client_request,
-                                ))
-                                .await;
-                        }
 
                         let _ = self
                             .tx_node
@@ -619,11 +607,29 @@ impl Consensus {
                 ConsensusCommand::AcceptNewView(new_view) => {
                     info!("Moving to view {} {} {}", new_view.view, self.state.last_seq_num_committed, self.state.seq_num);
 
-                    self.state.seq_num = self.state.last_seq_num_committed;
+                    
                     self.state.in_view_change = false;
                     self.state.checkpoint_votes.clear();
-                    self.view_changer.reset();
                     self.state.view = new_view.view;
+                    if self.state.current_leader() == self.id {
+                        // if we are the leader in this new view, 
+                        // then we need outstanding pre-prepares in this new view
+                        for pre_prepare in new_view.outstanding_pre_prepares.iter() {
+                            let _ = self
+                                .tx_consensus
+                                .send(ConsensusCommand::InitPrePrepare(
+                                    pre_prepare.clone().client_request,
+                                ))
+                                .await;
+                        }
+                        for request in self.view_changer.wait_set().iter() {
+                            println!("issuing old {:?}", request);
+                            let _ = self.tx_consensus.send(ConsensusCommand::InitPrePrepare(request.clone())).await;
+                        }
+                    }
+                    
+                    self.view_changer.reset();
+                  
                 }
 
                 ConsensusCommand::ApplyCommit(commit) => {
@@ -640,7 +646,7 @@ impl Consensus {
                     let client_request = pre_prepare.unwrap().clone().client_request;
 
                     self.apply_commit(&commit, &client_request).await;
-                    info!("Current State: {} {:?}", self.state.last_seq_num_committed, self.state.store);
+                    info!("Current State: {}: {:?}", self.state.last_seq_num_committed, self.state.store);
 
                     // The request we just committed was enough to now trigger a checkpoint
                     if self.state.last_seq_num_committed % self.config.checkpoint_frequency == 0

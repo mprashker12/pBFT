@@ -68,6 +68,11 @@ impl ViewChanger {
         outstanding_requests.contains(request)
     }
 
+    pub fn wait_set(&self) -> HashSet<ClientRequest> {
+        let outstanding_requests = self.wait_set.lock().unwrap();
+        outstanding_requests.clone()
+    }
+
     pub async fn wait_for(&self, request: &ClientRequest) {
         sleep(self.config.request_timeout).await;
         if self.is_in_wait_set(&request.clone()) {

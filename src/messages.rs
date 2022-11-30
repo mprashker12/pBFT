@@ -353,7 +353,7 @@ pub struct NewView {
     pub id: NodeId,
     pub view: usize,
     pub view_change_messages: Vec<ViewChange>,
-    pub outstanding_prepares: Vec<PrePrepare>,
+    pub outstanding_pre_prepares: Vec<PrePrepare>,
 }
 
 impl NewView {
@@ -362,13 +362,13 @@ impl NewView {
         id: usize,
         view: usize,
         view_change_messages: Vec<ViewChange>,
-        outstanding_prepares: Vec<PrePrepare>,
+        outstanding_pre_prepares: Vec<PrePrepare>,
     ) -> Self {
         Self {
             id,
             view,
             view_change_messages,
-            outstanding_prepares,
+            outstanding_pre_prepares,
         }
     }
 
