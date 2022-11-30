@@ -93,13 +93,13 @@ async fn main() -> std::io::Result<()> {
     let send_fut = async move {
         loop {
             client.issue_set(String::from("abc"), client.timestamp as u32).await;
-            sleep(std::time::Duration::from_millis(400)).await;
+            sleep(std::time::Duration::from_millis(200)).await;
             client.issue_set(String::from("abc"), client.timestamp as u32).await;
-            sleep(std::time::Duration::from_millis(400)).await;
+            sleep(std::time::Duration::from_millis(200)).await;
             client.issue_get(String::from("abc")).await;
-            sleep(std::time::Duration::from_millis(400)).await;
+            sleep(std::time::Duration::from_millis(200)).await;
             client.issue_get(String::from("def")).await;
-            sleep(std::time::Duration::from_millis(2000)).await;
+            sleep(std::time::Duration::from_millis(1000)).await;
         }
     };
 
@@ -124,10 +124,10 @@ async fn main() -> std::io::Result<()> {
 
 
     tokio::select! {
-        //_ = send_fut => {}
+        _ = send_fut => {}
         _ = outer_client.listen() => {}
         _ = vote_count_fut => {}
-        _ = read_cli => {}
+        //_ = read_cli => {}
     }
     
     Ok(())
