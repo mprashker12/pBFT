@@ -67,7 +67,7 @@ impl State {
         if self.in_view_change {
             return false;
         }
-        if self.config.is_equivocator {
+        if self.config.is_equivocator && self.current_leader() != self.id {
             return false;
         }
         if self.view != pre_prepare.view {
