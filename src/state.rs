@@ -11,6 +11,7 @@ use std::collections::{HashMap, HashSet, VecDeque, BTreeMap};
 use std::net::SocketAddr;
 
 use ed25519_dalek::{Digest, Sha512};
+use log::warn;
 
 #[derive(Default)]
 pub struct State {
@@ -67,7 +68,7 @@ impl State {
             return false;
         }
         if self.view != pre_prepare.view {
-            println!("Dropping pre-prepare because of view");
+            warn!("Dropping pre-prepare because wrong view - my view: {}, message view: {}", self.view, pre_prepare.view);
             return false;
         }
         if pre_prepare.client_request_digest != pre_prepare.client_request.digest() {

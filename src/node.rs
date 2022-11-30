@@ -18,7 +18,7 @@ use tokio::{io::AsyncBufReadExt, sync::Mutex};
 use ed25519_dalek::{PublicKey};
 
 use env_logger::Env;
-use log::{info};
+use log::{info, warn};
 
 pub struct Node {
     /// Id of this node
@@ -118,7 +118,7 @@ impl Node {
                     let inner = self.inner.clone();
                     tokio::spawn(async move {
                         if let Err(e) = inner.read_message(&mut stream).await {
-                            println!("Unable to read message from incoming connection {}", e);
+                            warn!("Unable to read message from incoming connection {}", e);
                         }
                     });
                 }
@@ -158,7 +158,7 @@ impl InnerNode {
             peer_pub_keys.insert(peer_id, peer_pub_key);
             return Ok(());
         } else if self.should_drop(&message).await {
-            println!("Dropping message from {:?}", message.get_id());
+            warn!("Dropping message from {:?}", message.get_id());
             return Ok(());
         }
 
@@ -185,7 +185,7 @@ impl InnerNode {
 
         let mut stream = BufStream::new(TcpStream::connect(peer_addr).await?);
         if let Err(e) = stream.get_mut().write(message.serialize().as_slice()).await {
-            println!("Failed to send to {}", peer_addr);
+            warn!("Failed to send to {}", peer_addr);
             return Err(Box::new(e));
         }
         Ok(())

@@ -12,7 +12,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
-use log::{debug, error, info, log_enabled, Level};
+use log::{info};
 
 // Note that all communication between the Node and the Consensus engine takes place
 // by the outer consensus struct
@@ -460,7 +460,6 @@ impl Consensus {
                         // we are already in a view change state or we are currently the leader
                         continue;
                     }
-                    info!("Initializing view change...");
                     self.state.in_view_change = true;
 
                     // find all pre-prepares that we have at least 2f + 1 votes for that occurred after the last stable seq-num
@@ -605,7 +604,7 @@ impl Consensus {
                 }
 
                 ConsensusCommand::AcceptNewView(new_view) => {
-                    info!("Moving to view {} {} {}", new_view.view, self.state.last_seq_num_committed, self.state.seq_num);
+                    info!("Moving to view {}", new_view.view);
 
                     
                     self.state.in_view_change = false;
