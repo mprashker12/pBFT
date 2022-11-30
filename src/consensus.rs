@@ -597,7 +597,7 @@ impl Consensus {
                             new_view.view, latest_stable_seq_num, max_seq_num
                         );
 
-                        self.state.seq_num = latest_stable_seq_num;
+                        self.state.seq_num = self.state.last_seq_num_committed;
                         for pre_prepare in outstanding_pre_prepares.iter() {
                             let _ = self
                                 .tx_consensus
@@ -617,8 +617,9 @@ impl Consensus {
                 }
 
                 ConsensusCommand::AcceptNewView(new_view) => {
-                    info!("Moving to view {}", new_view.view);
+                    info!("Moving to view {} {} {}", new_view.view, self.state.last_seq_num_committed, self.state.seq_num);
 
+                    self.state.seq_num = self.state.last_seq_num_committed;
                     self.state.in_view_change = false;
                     self.state.checkpoint_votes.clear();
                     self.view_changer.reset();
@@ -752,7 +753,8 @@ impl Consensus {
             // build the client response and send to client
 
             let res_val = if ret.is_some() { ret.unwrap() } else { None };
-            let res_success = res_val.is_some() || client_request.value.is_some();
+            //let res_success = res_val.is_some() || client_request.value.is_some();
+            let res_success = true;
 
             let client_response = if res_val.is_some() {
                 ClientResponse::new_with_signature(

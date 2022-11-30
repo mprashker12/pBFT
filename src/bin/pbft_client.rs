@@ -8,7 +8,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::str::FromStr;
 use std::sync::Arc;
 
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufStream};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufStream, Stdin};
 use tokio::time::sleep;
 use tokio::{net::TcpListener, net::TcpStream};
 use tokio::sync::{Mutex};
@@ -28,14 +28,13 @@ pub struct Client {
 pub struct VoteCounter {
     pub success_vote_quorum: Arc<Mutex<HashMap<usize, HashSet<NodeId>>>>,
     pub votes: Arc<Mutex<HashMap<(usize, usize), ClientResponse>>>,
-    pub tx_client : Sender<VoteReceit>,
+    pub tx_client : Sender<VoteCertificate>,
     pub vote_threshold: usize,
 }
 
 #[derive(Clone)]
-pub struct VoteReceit {
+pub struct VoteCertificate {
     timestamp: usize,
-    num_votes: usize,
     votes: Vec<ClientResponse>,
 }
 
@@ -43,6 +42,8 @@ pub struct VoteReceit {
 async fn main() -> std::io::Result<()> {
 
     // note that the client only needs f + 1 replies before accepting
+
+    // the client has a -t flag.
 
     let me_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 38079);
     let replica_addr0 = SocketAddr::from_str("127.0.0.1:38060").unwrap();
@@ -69,38 +70,58 @@ async fn main() -> std::io::Result<()> {
         timestamp: 0,
     };
 
-    
+
+    // future listening for vote count results from the client
+    let vote_count_fut = tokio::spawn(async move {
+        let mut succ_votes = HashMap::<usize, VoteCertificate>::new();
+
+        loop {
+            let vote_certificate = rx_client.recv().await.unwrap();
+            if succ_votes.contains_key(&vote_certificate.timestamp) {continue;}
+            succ_votes.insert(vote_certificate.timestamp, vote_certificate.clone());
+            println!("Got enough votes for {}. VOTES: {:?}", vote_certificate.timestamp, vote_certificate.votes);
+        }
+    });
+
     // message sending logic which can be changed for new tests
     let mut client = outer_client.clone();
-    let send_fut = tokio::spawn(async move {
+    let send_fut = async move {
         loop {
             client.issue_set(String::from("abc"), client.timestamp as u32).await;
-            client.issue_set(String::from("def"), client.timestamp as u32).await;
+            client.issue_set(String::from("abc"), client.timestamp as u32).await;
             client.issue_get(String::from("abc")).await;
             client.issue_get(String::from("def")).await;
             sleep(std::time::Duration::from_millis(2000)).await;
         }
-    });
+    };
 
-
-    // future listening for vote count results from the client
-    let vote_count_fut = tokio::spawn(async move {
-        let mut succ_votes = HashMap::<usize, VoteReceit>::new();
-
+    let mut client = outer_client.clone();
+    let read_cli = async move {
+        let mut reader = BufReader::new(tokio::io::stdin());
         loop {
-            let vote_receit = rx_client.recv().await.unwrap();
-            if succ_votes.contains_key(&vote_receit.timestamp) {continue;}
-            succ_votes.insert(vote_receit.timestamp, vote_receit.clone());
-            println!("Got enough votes for {}. VOTES: {:?}", vote_receit.timestamp, vote_receit.votes);
+            let mut line = String::new();
+            let _ = reader.read_line(&mut line).await;
+            let mut args_iter = line.split_ascii_whitespace();
+
+            let cmd = args_iter.next().unwrap();
+            let key = args_iter.next().unwrap();
+            if cmd.eq("set") {
+                let val = args_iter.next().unwrap().parse::<u32>().unwrap();
+                client.issue_set(key.to_string(), val).await;
+            } else if cmd.eq("get") {
+                client.issue_get(key.to_string()).await;
+            }
         }
-    });
+    };
+
+
     tokio::select! {
         _ = send_fut => {}
         _ = outer_client.listen() => {}
         _ = vote_count_fut => {}
+        //_ = read_cli => {}
     }
     
-
     Ok(())
 }
 
@@ -189,9 +210,8 @@ impl VoteCounter {
                     succ_votes.push(votes.get(&(response.time_stamp, *id)).unwrap().clone());
                 }
 
-                let _ = self.tx_client.send(VoteReceit {
+                let _ = self.tx_client.send(VoteCertificate {
                     timestamp: response.time_stamp,
-                    num_votes: succ_votes.len(),
                     votes: succ_votes
                 }).await;
             }
