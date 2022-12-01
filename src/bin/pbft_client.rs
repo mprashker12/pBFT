@@ -1,20 +1,17 @@
-use pbft::{NodeId, Key, Value};
-use pbft::messages::{ClientRequest, Message, ClientResponse};
-
-
+use pbft::messages::{ClientRequest, ClientResponse, Message};
+use pbft::{Key, NodeId, Value};
 
 use std::collections::{HashMap, HashSet};
-use std::net::{SocketAddr};
+use std::env;
+use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::env;
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::sync::mpsc::Sender;
+use tokio::sync::Mutex;
 use tokio::time::sleep;
 use tokio::{net::TcpListener, net::TcpStream};
-use tokio::sync::{Mutex};
-use tokio::sync::mpsc::{Sender};
-
 
 #[derive(Clone)]
 pub struct Client {
@@ -28,7 +25,7 @@ pub struct Client {
 pub struct VoteCounter {
     pub success_vote_quorum: Arc<Mutex<HashMap<usize, HashSet<NodeId>>>>,
     pub votes: Arc<Mutex<HashMap<(usize, usize), ClientResponse>>>,
-    pub tx_client : Sender<VoteCertificate>,
+    pub tx_client: Sender<VoteCertificate>,
     pub vote_threshold: usize,
 }
 
@@ -40,7 +37,6 @@ pub struct VoteCertificate {
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
-
     // note that the client only needs f + 1 replies before accepting
 
     let args: Vec<String> = env::args().collect();
@@ -69,7 +65,7 @@ async fn main() -> std::io::Result<()> {
     let vote_counter = VoteCounter {
         success_vote_quorum: Arc::new(Mutex::new(HashMap::new())),
         votes: Arc::new(Mutex::new(HashMap::new())),
-        tx_client, 
+        tx_client,
         vote_threshold: 1, /* number of faulty processes. We need to exceed this value */
     };
 
@@ -80,18 +76,22 @@ async fn main() -> std::io::Result<()> {
         timestamp: 0,
     };
 
-
     // future listening for vote count results from the client
     let vote_count_fut = tokio::spawn(async move {
         let mut succ_votes = HashMap::<usize, VoteCertificate>::new();
 
         loop {
             let vote_certificate = rx_client.recv().await.unwrap();
-            if succ_votes.contains_key(&vote_certificate.timestamp) {continue;}
+            if succ_votes.contains_key(&vote_certificate.timestamp) {
+                continue;
+            }
             succ_votes.insert(vote_certificate.timestamp, vote_certificate.clone());
             println!("**********************");
             println!("**********************");
-            println!("Got enough votes for {}. VOTES: {:?}", vote_certificate.timestamp, vote_certificate.votes);
+            println!(
+                "Got enough votes for {}. VOTES: {:?}",
+                vote_certificate.timestamp, vote_certificate.votes
+            );
             println!("**********************");
             println!("**********************");
         }
@@ -101,7 +101,9 @@ async fn main() -> std::io::Result<()> {
     let mut client = outer_client.clone();
     let send_fut = async move {
         loop {
-            client.issue_set(String::from("abc"), client.timestamp as u32).await;
+            client
+                .issue_set(String::from("abc"), client.timestamp as u32)
+                .await;
             sleep(std::time::Duration::from_millis(200)).await;
             client.issue_get(String::from("abc")).await;
             sleep(std::time::Duration::from_millis(1000)).await;
@@ -140,13 +142,11 @@ async fn main() -> std::io::Result<()> {
             _ = vote_count_fut => {}
         }
     }
-        
+
     Ok(())
 }
 
-
 impl Client {
-
     async fn listen(&self) {
         let listener = TcpListener::bind(self.listen_addr).await.unwrap();
         loop {
@@ -205,8 +205,11 @@ impl VoteCounter {
         }
         let response: Message = serde_json::from_str(&res).unwrap();
         let response = match response {
-            Message::ClientResponseMessage(response) => {response}
-            _ => {/* received a response which was not a client response, so just return */return Ok(());}
+            Message::ClientResponseMessage(response) => response,
+            _ => {
+                /* received a response which was not a client response, so just return */
+                return Ok(());
+            }
         };
 
         // if the response is not a success, then we drop it
@@ -218,7 +221,7 @@ impl VoteCounter {
             if success_vote_quorum.get_mut(&response.time_stamp).is_none() {
                 success_vote_quorum.insert(response.time_stamp, HashSet::<NodeId>::new());
             }
-            
+
             votes.insert((response.time_stamp, response.id), response.clone());
             let curr_quorum = success_vote_quorum.get_mut(&response.time_stamp).unwrap();
             curr_quorum.insert(response.id);
@@ -229,10 +232,13 @@ impl VoteCounter {
                     succ_votes.push(votes.get(&(response.time_stamp, *id)).unwrap().clone());
                 }
 
-                let _ = self.tx_client.send(VoteCertificate {
-                    timestamp: response.time_stamp,
-                    votes: succ_votes
-                }).await;
+                let _ = self
+                    .tx_client
+                    .send(VoteCertificate {
+                        timestamp: response.time_stamp,
+                        votes: succ_votes,
+                    })
+                    .await;
             }
         }
         Ok(())

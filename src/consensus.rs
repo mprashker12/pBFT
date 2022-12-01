@@ -4,7 +4,7 @@ use crate::messages::{
     NewView, NodeCommand, PrePrepare, Prepare, SendMessage, ViewChange,
 };
 use crate::state::State;
-use crate::view_changer::{ViewChanger};
+use crate::view_changer::ViewChanger;
 use crate::NodeId;
 
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -12,7 +12,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
-use log::{info};
+use log::info;
 
 // Note that all communication between the Node and the Consensus engine takes place
 // by the outer consensus struct
@@ -141,7 +141,13 @@ impl Consensus {
                         }
 
                         Message::CheckPointMessage(checkpoint) => {
-                            info!("Saw checkpoint from {} {} {:?} {:?}", checkpoint.id, checkpoint.committed_seq_num, checkpoint.state, checkpoint.state_digest);
+                            info!(
+                                "Saw checkpoint from {} {} {:?} {:?}",
+                                checkpoint.id,
+                                checkpoint.committed_seq_num,
+                                checkpoint.state,
+                                checkpoint.state_digest
+                            );
 
                             if self.state.should_accept_checkpoint(&checkpoint) {
                                 let _ = self
@@ -187,7 +193,12 @@ impl Consensus {
                     // which, if it expires and the request is still outstanding,
                     // will initiate the view change protocol
 
-                    if self.state.message_bank.sent_requests.contains(&(self.state.view, request.clone())) {
+                    if self
+                        .state
+                        .message_bank
+                        .sent_requests
+                        .contains(&(self.state.view, request.clone()))
+                    {
                         continue;
                     }
 
@@ -225,7 +236,12 @@ impl Consensus {
                     // Here we are primary and received a client request which we deemed valid
                     // so we broadcast a Pre_prepare Message to the network and assign
                     // the next sequence number to this request
-                    if self.state.message_bank.sent_requests.contains(&(self.state.view, request.clone())) {
+                    if self
+                        .state
+                        .message_bank
+                        .sent_requests
+                        .contains(&(self.state.view, request.clone()))
+                    {
                         continue;
                     }
 
@@ -278,15 +294,16 @@ impl Consensus {
                         "Rebroadcasting PrePrepare with seq-num {:?}",
                         view_seq_num_pair
                     );
-                    let pre_prepare= self
+                    let pre_prepare = self
                         .state
                         .message_bank
                         .accepted_pre_prepare_requests
                         .get(&view_seq_num_pair);
 
-                    if pre_prepare.is_none() {return;}
+                    if pre_prepare.is_none() {
+                        return;
+                    }
                     let pre_prepare = pre_prepare.unwrap().clone();
-                        
 
                     let pre_prepare_message = Message::PrePrepareMessage(pre_prepare.clone());
                     let _ = self
@@ -586,7 +603,6 @@ impl Consensus {
                             outstanding_pre_prepares.clone(),
                         );
 
-
                         let _ = self
                             .tx_node
                             .send(NodeCommand::BroadCastMessageCommand(BroadCastMessage {
@@ -597,7 +613,6 @@ impl Consensus {
                 }
 
                 ConsensusCommand::AcceptNewView(new_view) => {
-                    
                     self.state.in_view_change = false;
                     self.state.checkpoint_votes.clear();
                     self.state.view = new_view.view;
@@ -607,9 +622,8 @@ impl Consensus {
                         info!("I AM NEW LEADER (Node {})", self.id);
                     }
 
-
                     if self.state.current_leader() == self.id {
-                        // if we are the leader in this new view, 
+                        // if we are the leader in this new view,
                         // then we need outstanding pre-prepares in this new view
                         for pre_prepare in new_view.outstanding_pre_prepares.iter() {
                             let _ = self
@@ -620,13 +634,15 @@ impl Consensus {
                                 .await;
                         }
                         for request in self.view_changer.wait_set().iter() {
-                            println!("issuing old {:?}", request);
-                            let _ = self.tx_consensus.send(ConsensusCommand::InitPrePrepare(request.clone())).await;
+                            info!("Issuing old {:?}", request);
+                            let _ = self
+                                .tx_consensus
+                                .send(ConsensusCommand::InitPrePrepare(request.clone()))
+                                .await;
                         }
                     }
-                    
+
                     self.view_changer.reset();
-                  
                 }
 
                 ConsensusCommand::ApplyCommit(commit) => {
@@ -643,7 +659,10 @@ impl Consensus {
                     let client_request = pre_prepare.unwrap().clone().client_request;
 
                     self.apply_commit(&commit, &client_request).await;
-                    info!("Current State: {}: {:?}", self.state.last_seq_num_committed, self.state.store);
+                    info!(
+                        "Current State: {}: {:?}",
+                        self.state.last_seq_num_committed, self.state.store
+                    );
 
                     // The request we just committed was enough to now trigger a checkpoint
                     if self.state.last_seq_num_committed % self.config.checkpoint_frequency == 0
@@ -673,7 +692,7 @@ impl Consensus {
                         checkpoint.state_digest.clone(),
                     )) {
                         curr_vote_set.insert(checkpoint.id);
-                
+
                         if curr_vote_set.len() >= 2 * self.config.num_faulty {
                             // At this point, we have enough checkpoint messages to update out state
                             info!("Updating state from checkpoint");
@@ -821,11 +840,10 @@ impl Consensus {
     }
 
     async fn equivocate_pre_prepare(&self, request: ClientRequest) {
-        
         // mutate the given request
         let mut d_request = request.clone();
         d_request.value = Some(42);
-        
+
         let pre_prepare = PrePrepare::new_with_signature(
             self.keypair_bytes.clone(),
             self.id,
@@ -844,20 +862,26 @@ impl Consensus {
 
         let pre_prepare_message = Message::PrePrepareMessage(pre_prepare.clone());
         let d_pre_prepare_message = Message::PrePrepareMessage(d_pre_prepare.clone());
-        
-        // if the peer-id is even, we send the original request, otherwise, 
-        // we send the differentiated request. 
+
+        // if the peer-id is even, we send the original request, otherwise,
+        // we send the differentiated request.
         for (peer_id, peer_addr) in self.config.peer_addrs.iter() {
             if peer_id % 2 == 0 {
-                let _ = self.tx_node.send(NodeCommand::SendMessageCommand(SendMessage {
-                    destination: *peer_addr,
-                    message: d_pre_prepare_message.clone(),
-                })).await;
+                let _ = self
+                    .tx_node
+                    .send(NodeCommand::SendMessageCommand(SendMessage {
+                        destination: *peer_addr,
+                        message: d_pre_prepare_message.clone(),
+                    }))
+                    .await;
             } else {
-                let _ = self.tx_node.send(NodeCommand::SendMessageCommand(SendMessage {
-                    destination: *peer_addr,
-                    message: pre_prepare_message.clone(),
-                })).await;
+                let _ = self
+                    .tx_node
+                    .send(NodeCommand::SendMessageCommand(SendMessage {
+                        destination: *peer_addr,
+                        message: pre_prepare_message.clone(),
+                    }))
+                    .await;
             }
         }
     }

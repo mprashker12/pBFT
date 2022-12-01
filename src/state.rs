@@ -1,14 +1,12 @@
 use crate::config::Config;
 use crate::message_bank::MessageBank;
 use crate::messages::{
-    CheckPoint, ClientRequest, Commit, NewView, PrePrepare, Prepare,
-    ViewChange,
+    CheckPoint, ClientRequest, Commit, NewView, PrePrepare, Prepare, ViewChange,
 };
 
 use crate::{Key, NodeId, Value};
 
-use std::collections::{HashMap, HashSet, BTreeMap};
-
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use ed25519_dalek::{Digest, Sha512};
 use log::warn;
@@ -71,7 +69,10 @@ impl State {
             return false;
         }
         if self.view != pre_prepare.view {
-            warn!("Dropping pre-prepare because wrong view - my view: {}, message view: {}", self.view, pre_prepare.view);
+            warn!(
+                "Dropping pre-prepare because wrong view - my view: {}, message view: {}",
+                self.view, pre_prepare.view
+            );
             return false;
         }
         if pre_prepare.client_request_digest != pre_prepare.client_request.digest() {

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, BTreeMap};
+use std::collections::{BTreeMap, HashMap};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use serde::{Deserialize, Serialize};
@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::{Key, NodeId, Value};
 
 use ed25519_dalek::{Digest, Sha512};
-use ed25519_dalek::{Keypair, PublicKey,Signature};
+use ed25519_dalek::{Keypair, PublicKey, Signature};
 
 /// Messages which are communicated between nodes in the network
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -331,7 +331,6 @@ impl ViewChange {
         checkpoint_proof: Vec<CheckPoint>,
         subsequent_prepares: HashMap<usize, (PrePrepare, Vec<Prepare>)>,
     ) -> ViewChange {
-
         let key_pair = Keypair::from_bytes(key_pair_bytes.as_slice()).unwrap();
         let mut pre_hashed = Sha512::new();
         pre_hashed.update(b"ViewChange");
@@ -456,7 +455,7 @@ impl ClientResponse {
         pre_hashed.update(time_stamp.to_le_bytes());
         pre_hashed.update(key.as_bytes());
         let signature = key_pair.sign_prehashed(pre_hashed, None).unwrap();
-        
+
         ClientResponse {
             id,
             time_stamp,

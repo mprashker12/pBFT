@@ -18,7 +18,7 @@ pub struct Config {
     /// to rebroadcast a pre-prepare which has not been applied to yet
     pub rebroadcast_timeout: std::time::Duration,
     /// How often a node should broadcast its identity (with pub key) to the network
-    pub identity_broadcast_interval: std::time::Duration,   
+    pub identity_broadcast_interval: std::time::Duration,
     /// How many requests we see in between stable checkpoints
     pub checkpoint_frequency: usize,
     /// Does this node equivocate (used for testing)

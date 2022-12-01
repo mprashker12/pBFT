@@ -6,17 +6,12 @@ use pbft::Result;
 
 use std::str::FromStr;
 
-use ed25519_dalek::{Keypair};
+use ed25519_dalek::Keypair;
 use rand::rngs::OsRng;
 
 use tokio::sync::mpsc::channel;
 
-
-use std::{
-    collections::HashMap,
-    env,
-    net::{SocketAddr},
-};
+use std::{collections::HashMap, env, net::SocketAddr};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -33,7 +28,7 @@ async fn main() -> Result<()> {
     }
     let id = args[index].parse::<usize>().unwrap();
     index += 1;
-    
+
     let mut is_equivocator = false;
     if index < args.len() {
         let byzantine_flag = args[index].clone();

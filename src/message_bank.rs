@@ -1,6 +1,5 @@
 use crate::messages::{CheckPoint, ClientRequest, Commit, PrePrepare, Prepare};
 
-
 use std::collections::{HashMap, HashSet};
 
 #[derive(Default)]
@@ -32,15 +31,15 @@ impl MessageBank {
     /// with sequence number < upper_seq_num
     pub fn garbage_collect(&mut self, upper_seq_num: usize) {
         let mut old_view_seq_num_pairs = vec![];
-        for ((view, seq_num), _) in self.accepted_pre_prepare_requests.iter()  {
+        for ((view, seq_num), _) in self.accepted_pre_prepare_requests.iter() {
             if *seq_num < upper_seq_num {
                 old_view_seq_num_pairs.push((*view, *seq_num));
             }
         }
 
         for (view, seq_num) in old_view_seq_num_pairs.iter() {
-            self.accepted_pre_prepare_requests.remove(&(*view, *seq_num));
+            self.accepted_pre_prepare_requests
+                .remove(&(*view, *seq_num));
         }
-
     }
 }
