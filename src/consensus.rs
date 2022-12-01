@@ -604,7 +604,7 @@ impl Consensus {
 
                     info!("Moving to view {}", new_view.view);
                     if self.state.current_leader() == self.id {
-                        info!("NEW LEADER (Node {})", self.id);
+                        info!("I AM NEW LEADER (Node {})", self.id);
                     }
 
 
