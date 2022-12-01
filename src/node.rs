@@ -114,6 +114,7 @@ impl Node {
                 // we maintain the connection and only read from it
                 // perhaps updating the consensus state
                 res = listener.accept() => {
+                    if !res.is_ok() {continue;}
                     let (mut stream, _) = res.unwrap();
                     let inner = self.inner.clone();
                     tokio::spawn(async move {
