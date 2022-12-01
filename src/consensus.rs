@@ -624,7 +624,7 @@ impl Consensus {
 
                     if self.state.current_leader() == self.id {
                         // if we are the leader in this new view,
-                        // then we need outstanding pre-prepares in this new view
+                        // then we need to broadcast outstanding pre-prepares in this new view
                         for pre_prepare in new_view.outstanding_pre_prepares.iter() {
                             let _ = self
                                 .tx_consensus

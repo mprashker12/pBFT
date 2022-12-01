@@ -15,7 +15,6 @@ use std::{collections::HashMap, env, net::SocketAddr};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // TODO: We will eventually read the config from the command line
     let args: Vec<String> = env::args().collect();
     let mut index = 1;
     let num_nodes = args[index].parse::<usize>().unwrap();

@@ -53,20 +53,25 @@ async fn main() -> std::io::Result<()> {
     index += 1;
 
     let mut client_mode = true;
+    let mut interval_millis: usize = 0;
     if index < args.len() {
         let flag = args[index].clone();
+        index += 1;
         if flag.as_str().eq("test") {
             client_mode = false;
+            interval_millis = args[index].clone().parse::<usize>().unwrap();
         }
     }
 
     let (tx_client, mut rx_client) = tokio::sync::mpsc::channel(32);
 
+    let num_faulty = (num_nodes - 1) / 3;
+
     let vote_counter = VoteCounter {
         success_vote_quorum: Arc::new(Mutex::new(HashMap::new())),
         votes: Arc::new(Mutex::new(HashMap::new())),
         tx_client,
-        vote_threshold: 1, /* number of faulty processes. We need to exceed this value */
+        vote_threshold: num_faulty + 1, /* number of faulty processes. We need to exceed this value */
     };
 
     let outer_client = Client {
@@ -104,9 +109,9 @@ async fn main() -> std::io::Result<()> {
             client
                 .issue_set(String::from("abc"), client.timestamp as u32)
                 .await;
-            sleep(std::time::Duration::from_millis(200)).await;
+            sleep(std::time::Duration::from_millis(interval_millis as u64)).await;
             client.issue_get(String::from("abc")).await;
-            sleep(std::time::Duration::from_millis(1000)).await;
+            sleep(std::time::Duration::from_millis(interval_millis as u64)).await;
         }
     };
 
