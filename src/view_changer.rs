@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::messages::{ClientRequest, ConsensusCommand, PrePrepare};
+use crate::messages::{ClientRequest, ConsensusCommand};
 use crate::NodeId;
 
 use std::collections::HashSet;
