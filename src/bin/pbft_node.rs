@@ -40,9 +40,9 @@ async fn main() -> Result<()> {
         num_nodes,
         num_faulty,
         peer_addrs,
-        request_timeout: std::time::Duration::from_secs(5),
-        rebroadcast_timeout: std::time::Duration::from_secs(6),
-        identity_broadcast_interval: std::time::Duration::from_secs(3),
+        request_timeout: std::time::Duration::from_secs(3),
+        rebroadcast_timeout: std::time::Duration::from_secs(8),
+        identity_broadcast_interval: std::time::Duration::from_secs(6),
         checkpoint_frequency: 10,
         is_equivocator,
     };
