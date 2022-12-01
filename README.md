@@ -7,3 +7,7 @@ To run a node on a cluster [addr_1, addr_2, ... addr_n] with addr_i = (ip_i):(po
 ```
 cargo build
 ```
+then to run node i
+```
+cargo run --bin pbft_node n [addr_1] ... [addr_n] i
+```
