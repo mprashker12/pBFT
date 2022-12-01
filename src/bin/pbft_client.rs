@@ -104,7 +104,7 @@ async fn main() -> std::io::Result<()> {
             client.issue_get(String::from("abc")).await;
             //sleep(std::time::Duration::from_millis(200)).await;
             client.issue_get(String::from("def")).await;
-            //sleep(std::time::Duration::from_millis(1000)).await;
+            sleep(std::time::Duration::from_millis(1000)).await;
         }
     };
 
