@@ -89,7 +89,11 @@ async fn main() -> std::io::Result<()> {
             let vote_certificate = rx_client.recv().await.unwrap();
             if succ_votes.contains_key(&vote_certificate.timestamp) {continue;}
             succ_votes.insert(vote_certificate.timestamp, vote_certificate.clone());
+            println!("**********************");
+            println!("**********************");
             println!("Got enough votes for {}. VOTES: {:?}", vote_certificate.timestamp, vote_certificate.votes);
+            println!("**********************");
+            println!("**********************");
         }
     });
 

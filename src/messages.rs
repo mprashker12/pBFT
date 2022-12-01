@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::{Key, NodeId, Value};
 
 use ed25519_dalek::{Digest, Sha512};
-use ed25519_dalek::{Keypair, PublicKey, SecretKey, Signature};
+use ed25519_dalek::{Keypair, PublicKey,Signature};
 
 /// Messages which are communicated between nodes in the network
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -331,7 +331,13 @@ impl ViewChange {
         checkpoint_proof: Vec<CheckPoint>,
         subsequent_prepares: HashMap<usize, (PrePrepare, Vec<Prepare>)>,
     ) -> ViewChange {
-        let mut signature = Vec::new();
+
+        let key_pair = Keypair::from_bytes(key_pair_bytes.as_slice()).unwrap();
+        let mut pre_hashed = Sha512::new();
+        pre_hashed.update(b"ViewChange");
+        pre_hashed.update(new_view.to_le_bytes());
+        pre_hashed.update(last_stable_seq_num.to_le_bytes());
+        let signature = key_pair.sign_prehashed(pre_hashed, None).unwrap();
 
         ViewChange {
             id,
@@ -339,12 +345,21 @@ impl ViewChange {
             last_stable_seq_num,
             checkpoint_proof,
             subsequent_prepares,
-            signature,
+            signature: signature.to_bytes().to_vec(),
         }
     }
 
     pub fn is_properly_signed_by(&self, pub_key: &PublicKey) -> bool {
-        true
+        let mut pre_hashed = Sha512::new();
+        pre_hashed.update(b"ViewChange");
+        pre_hashed.update(self.new_view.to_le_bytes());
+        pre_hashed.update(self.last_stable_seq_num.to_le_bytes());
+
+        let signature = Signature::from_bytes(self.signature.as_slice()).unwrap();
+
+        pub_key
+            .verify_prehashed(pre_hashed, None, &signature)
+            .is_ok()
     }
 }
 
@@ -428,20 +443,27 @@ pub struct ClientResponse {
 
 impl ClientResponse {
     pub fn new_with_signature(
+        key_pair_bytes: Vec<u8>,
         id: NodeId,
         time_stamp: usize,
         key: Key,
         value: Option<Value>,
         success: bool,
     ) -> ClientResponse {
-        let mut signature = Vec::<u8>::new();
+        let key_pair = Keypair::from_bytes(key_pair_bytes.as_slice()).unwrap();
+        let mut pre_hashed = Sha512::new();
+        pre_hashed.update(b"ViewChange");
+        pre_hashed.update(time_stamp.to_le_bytes());
+        pre_hashed.update(key.as_bytes());
+        let signature = key_pair.sign_prehashed(pre_hashed, None).unwrap();
+        
         ClientResponse {
             id,
             time_stamp,
             key,
             value,
             success,
-            signature,
+            signature: signature.to_bytes().to_vec(),
         }
     }
 }

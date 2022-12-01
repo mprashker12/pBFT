@@ -761,6 +761,7 @@ impl Consensus {
 
             let client_response = if res_val.is_some() {
                 ClientResponse::new_with_signature(
+                    self.keypair_bytes.clone(),
                     self.id,
                     client_request.time_stamp,
                     client_request.key.clone(),
@@ -769,6 +770,7 @@ impl Consensus {
                 )
             } else {
                 ClientResponse::new_with_signature(
+                    self.keypair_bytes.clone(),
                     self.id,
                     client_request.time_stamp,
                     client_request.key.clone(),
