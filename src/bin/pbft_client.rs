@@ -52,11 +52,11 @@ async fn main() -> std::io::Result<()> {
     let me_addr = SocketAddr::from_str(args[index].clone().as_str()).unwrap();
     index += 1;
 
-    let mut client_mode = false;
+    let mut client_mode = true;
     if index < args.len() {
         let flag = args[index].clone();
-        if flag.as_str().eq("cli") {
-            client_mode = true;
+        if flag.as_str().eq("test") {
+            client_mode = false;
         }
     }
 

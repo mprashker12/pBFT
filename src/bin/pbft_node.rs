@@ -35,9 +35,11 @@ async fn main() -> Result<()> {
         is_equivocator = byzantine_flag.as_str().eq("b");
     }
 
+    let num_faulty: usize = (num_nodes - 1) / 3;
+
     let config = Config {
         num_nodes,
-        num_faulty: 1,
+        num_faulty,
         peer_addrs,
         request_timeout: std::time::Duration::from_secs(5),
         rebroadcast_timeout: std::time::Duration::from_secs(6),
