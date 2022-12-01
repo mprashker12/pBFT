@@ -1,18 +1,18 @@
 use crate::config::Config;
-use crate::consensus::Consensus;
+
 use crate::messages::{
-    ClientRequest, ConsensusCommand, Identifier, Message, NodeCommand, PrePrepare, Prepare,
+    ConsensusCommand, Identifier, Message, NodeCommand
 };
 use crate::{NodeId, Result};
 
 use std::collections::HashMap;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{SocketAddr};
 use std::sync::Arc;
 
 use tokio::io::{AsyncWriteExt, BufStream};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::time::{sleep, Duration, Instant};
+use tokio::time::{sleep};
 use tokio::{io::AsyncBufReadExt, sync::Mutex};
 
 use ed25519_dalek::{PublicKey};

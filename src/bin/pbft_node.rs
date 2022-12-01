@@ -6,16 +6,16 @@ use pbft::Result;
 
 use std::str::FromStr;
 
-use ed25519_dalek::{Keypair, PublicKey, SecretKey};
+use ed25519_dalek::{Keypair};
 use rand::rngs::OsRng;
 
 use tokio::sync::mpsc::channel;
 
-use core::num;
+
 use std::{
     collections::HashMap,
     env,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
+    net::{SocketAddr},
 };
 
 #[tokio::main]
@@ -47,7 +47,7 @@ async fn main() -> Result<()> {
         request_timeout: std::time::Duration::from_secs(5),
         rebroadcast_timeout: std::time::Duration::from_secs(6),
         identity_broadcast_interval: std::time::Duration::from_secs(3),
-        checkpoint_frequency: 4,
+        checkpoint_frequency: 10,
         is_equivocator,
     };
 

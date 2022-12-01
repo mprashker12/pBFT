@@ -4,7 +4,7 @@ use crate::messages::{
     NewView, NodeCommand, PrePrepare, Prepare, SendMessage, ViewChange,
 };
 use crate::state::State;
-use crate::view_changer::{self, ViewChanger};
+use crate::view_changer::{ViewChanger};
 use crate::NodeId;
 
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -455,7 +455,7 @@ impl Consensus {
                     }
                 }
 
-                ConsensusCommand::InitViewChange(request) => {
+                ConsensusCommand::InitViewChange(_request) => {
                     if self.state.in_view_change || self.state.current_leader() == self.id {
                         // we are already in a view change state or we are currently the leader
                         continue;

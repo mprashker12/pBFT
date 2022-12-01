@@ -1,14 +1,14 @@
 use crate::config::Config;
 use crate::message_bank::MessageBank;
 use crate::messages::{
-    CheckPoint, ClientRequest, ClientResponse, Commit, Message, NewView, PrePrepare, Prepare,
+    CheckPoint, ClientRequest, Commit, NewView, PrePrepare, Prepare,
     ViewChange,
 };
-use crate::node::Node;
+
 use crate::{Key, NodeId, Value};
 
-use std::collections::{HashMap, HashSet, VecDeque, BTreeMap};
-use std::net::SocketAddr;
+use std::collections::{HashMap, HashSet, BTreeMap};
+
 
 use ed25519_dalek::{Digest, Sha512};
 use log::warn;
