@@ -94,8 +94,8 @@ async fn main() -> std::io::Result<()> {
             println!("**********************");
             println!("**********************");
             println!(
-                "Got enough votes for {}. VOTES: {:?}",
-                vote_certificate.timestamp, vote_certificate.votes
+                "Got enough votes for request with timestamp {}. Value: {:?}. VOTES: {:?}",
+                vote_certificate.timestamp, vote_certificate.votes.get(0).unwrap().value, vote_certificate.votes
             );
             println!("**********************");
             println!("**********************");
