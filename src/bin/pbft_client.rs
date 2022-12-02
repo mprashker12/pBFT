@@ -38,7 +38,6 @@ pub struct VoteCertificate {
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     // note that the client only needs f + 1 replies before accepting
-
     let args: Vec<String> = env::args().collect();
     let mut index = 1;
     let num_nodes = args[index].parse::<usize>().unwrap();
@@ -51,6 +50,8 @@ async fn main() -> std::io::Result<()> {
     }
     let me_addr = SocketAddr::from_str(args[index].clone().as_str()).unwrap();
     index += 1;
+
+    println!("pBFT Client. Listening for reponses on {:?}. Ready for commands...", me_addr);
 
     let mut client_mode = true;
     let mut interval_millis: usize = 0;
