@@ -372,7 +372,7 @@ pub struct NewView {
 
 impl NewView {
     pub fn new_with_signature(
-        keypair_bytes: Vec<u8>,
+        _keypair_bytes: Vec<u8>,
         id: usize,
         view: usize,
         view_change_messages: Vec<ViewChange>,
@@ -386,7 +386,7 @@ impl NewView {
         }
     }
 
-    pub fn is_properly_signed_by(&self, pub_key: &PublicKey) -> bool {
+    pub fn is_properly_signed_by(&self, _pub_key: &PublicKey) -> bool {
         true
     }
 }
